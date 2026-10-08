@@ -203,6 +203,8 @@ function writeAlias(scope: ProfileScope, connectionId: string, alias: null | str
 /** Paints the new name in the accounts cache at once; the RPC answer reconciles it, a refusal restores the old one. */
 export function useRenameAccount(scope: ProfileScope): AccountRename {
   const [pending, setPending] = useState<null | string>(null)
+  // The newest rename per account; an older reply or rollback must not paint over it.
+  const latest = useRef(new Map<string, number>())
 
   const rename = useCallback(
     async (connectionId: string, alias: string): Promise<WriteOutcome> => {
@@ -212,6 +214,10 @@ export function useRenameAccount(scope: ProfileScope): AccountRename {
         .getQueryData<ConnectorAccountsResult>(key)
         ?.accounts.find(row => row.connection_id === connectionId)
 
+      const generation = (latest.current.get(connectionId) ?? 0) + 1
+      const current = () => latest.current.get(connectionId) === generation
+
+      latest.current.set(connectionId, generation)
       setPending(connectionId)
       await queryClient.cancelQueries({ queryKey: key })
       writeAlias(scope, connectionId, alias)
@@ -219,11 +225,15 @@ export function useRenameAccount(scope: ProfileScope): AccountRename {
       try {
         const row = await renameConnectorAccount(scope, connectionId, alias)
 
-        writeAlias(scope, connectionId, row.alias)
+        if (current()) {
+          writeAlias(scope, connectionId, row.alias)
+        }
 
         return { ok: true }
       } catch (error) {
-        writeAlias(scope, connectionId, before?.alias)
+        if (current()) {
+          writeAlias(scope, connectionId, before?.alias)
+        }
 
         return failed(asConnectorError(error))
       } finally {

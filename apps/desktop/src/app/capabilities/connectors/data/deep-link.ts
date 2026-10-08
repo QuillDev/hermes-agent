@@ -6,9 +6,21 @@ import { wakeAccountOperation } from './rpc'
 const connectorRoute = (slug: string): string =>
   `${CAPABILITIES_ROUTE}?tab=connectors&connector=${encodeURIComponent(slug)}`
 
-/** The Connectors tab with one app's dialog open and the named account's rename editor open. */
-export const accountRenameRoute = (slug: string, alias: string): string =>
-  `${connectorRoute(slug)}&rename=${encodeURIComponent(alias)}`
+/** The Connectors tab, scoped to the chat's own profile and connection, with one app's dialog and the named
+ *  account's rename editor open. */
+export function accountRenameRoute(
+  slug: string,
+  alias: string,
+  owner: { connectionId: null | string; profile: string }
+) {
+  const params = new URLSearchParams({ profile: owner.profile, rename: alias })
+
+  if (owner.connectionId) {
+    params.set('connection', owner.connectionId)
+  }
+
+  return `${connectorRoute(slug)}&${params.toString()}`
+}
 
 export async function resumeAccountConnect(opId: string, navigate: (to: string) => void): Promise<boolean> {
   const operation = $accountOperations.get()[opId]

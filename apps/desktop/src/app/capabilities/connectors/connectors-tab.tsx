@@ -29,7 +29,7 @@ import {
   localServerName
 } from './derive'
 import { DisconnectConfirm, type Disconnecting } from './disconnect-confirm'
-import { HostedConnectorDialog } from './hosted-dialog'
+import { HostedConnectorDialog, type PendingRename } from './hosted-dialog'
 import { LocalConnectorDialog } from './local-dialog'
 import { RemoveServerConfirm } from './local-slots'
 import { openToolsList, resetOpenedTools } from './tools-summary'
@@ -62,7 +62,7 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
   const [addOpen, setAddOpen] = useState(false)
   const [removeServer, setRemoveServer] = useState<null | ConnectorCardModel>(null)
   const [disconnecting, setDisconnecting] = useState<Disconnecting | null>(null)
-  const [pendingRename, setPendingRename] = useState<null | string>(null)
+  const [pendingRename, setPendingRename] = useState<null | PendingRename>(null)
   const renameOpened = useCallback(() => setPendingRename(null), [])
   const [installing, setInstalling] = useState<null | string>(null)
 
@@ -126,8 +126,8 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     }
   }
 
-  const connectAccount = async (card: ConnectorCardModel, reconnect: boolean, alias?: string) => {
-    const outcome = await connector.connect(card.slug, { alias, reconnect })
+  const connectAccount = async (card: ConnectorCardModel, reconnect: boolean, alias?: null | string) => {
+    const outcome = await connector.connect(card.slug, { alias: alias ?? undefined, reconnect })
 
     if (outcome.ok) {
       const url = outcome.operation.targets.find(target => target.connectUrl)?.connectUrl
@@ -140,8 +140,11 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     return outcome
   }
 
-  const startConnect = async (card: ConnectorCardModel, reconnect: boolean, alias?: string) => {
-    const outcome = await connectAccount(card, reconnect, alias ?? reconnectAlias(reconnect, hosted.accounts, card))
+  // A row passes its account's name, or null for an unnamed account; only an app-level reconnect (undefined)
+  // falls back to the account the summary speaks for.
+  const startConnect = async (card: ConnectorCardModel, reconnect: boolean, alias?: null | string) => {
+    const target = alias === undefined ? reconnectAlias(reconnect, hosted.accounts, card) : alias
+    const outcome = await connectAccount(card, reconnect, target)
 
     if (!outcome.ok) {
       notifyError(outcome.error, t.connectors.connectErrorFor(card.name))
@@ -292,7 +295,7 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
               return outcome.ok ? { ok: true } : outcome
             },
             pendingRename,
-            reconnect: (account: AccountRow) => void startConnect(openCard, true, account.alias ?? undefined),
+            reconnect: (account: AccountRow) => void startConnect(openCard, true, account.alias ?? null),
             reconnecting: connector.pending === openCard.slug,
             remove: (account: AccountRow) => setDisconnecting({ account, card: openCard }),
             rename: renamer.rename,
@@ -303,7 +306,10 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
           hosted={hosted}
           installFields={bundledEntry(openCard)?.required_env}
           installing={installing === cardKey(openCard)}
-          onClose={() => setOpenKey(null)}
+          onClose={() => {
+            setOpenKey(null)
+            setPendingRename(null)
+          }}
           onConnect={() => void startConnect(openCard, false)}
           onDisconnect={() => setDisconnecting({ card: openCard })}
           onGiveUp={opId => void write(connector.giveUp(opId))}
@@ -366,7 +372,7 @@ function HostedNotice({ hasGuest, phase }: { hasGuest: boolean; phase: HostedPha
 function useOpenFromRoute(
   cards: readonly ConnectorCardModel[],
   open: (key: string) => void,
-  rename: (alias: string) => void
+  rename: (target: PendingRename) => void
 ): void {
   const { hash, pathname, search } = useLocation()
   const navigate = useNavigate()
@@ -395,7 +401,7 @@ function useOpenFromRoute(
     const alias = params.get('rename')
 
     if (alias) {
-      rename(alias)
+      rename({ alias, slug: target.slug })
     }
 
     open(cardKey(target))
@@ -403,6 +409,8 @@ function useOpenFromRoute(
     params.delete('connector')
     params.delete('tool')
     params.delete('rename')
+    params.delete('profile')
+    params.delete('connection')
 
     const query = params.toString()
     navigate({ hash, pathname, search: query ? `?${query}` : '' }, { replace: true })

@@ -6,7 +6,7 @@ import { openFreeTierSignIn } from '@/store/free-tier-sign-in'
 
 import type { McpServersController } from '../mcp/use-mcp-servers'
 
-import { type AccountEdit, AccountsSection } from './accounts-section'
+import { type AccountEdit, AccountsSection, type AccountsSectionProps } from './accounts-section'
 import { ConnectElement } from './connect-element'
 import { ConnectorDialog } from './connector-dialog'
 import {
@@ -47,10 +47,15 @@ export interface HostedConnectorDialogProps {
   togglePending: boolean
 }
 
+export interface PendingRename {
+  alias: string
+  slug: string
+}
+
 export interface HostedAccountActions {
   add: (alias: string) => Promise<WriteOutcome>
-  /** An account name a deep link asked to rename; the dialog opens its editor once the account is listed. */
-  pendingRename: null | string
+  /** An account a deep link asked to rename; that app's dialog opens its editor once the account is listed. */
+  pendingRename: null | PendingRename
   reconnect: (account: AccountRow) => void
   reconnecting: boolean
   remove: (account: AccountRow) => void
@@ -88,18 +93,8 @@ export function HostedConnectorDialog({
     }
   }, [inUse])
 
-  const [edit, setEdit] = useState<AccountEdit | null>(null)
   const accounts = card.ways.hosted?.accounts ?? []
-  const retired = card.ways.hosted?.retiredAccounts ?? []
-  const { pendingRename, renameOpened } = accountActions
-  const renameTarget = pendingRename === null ? undefined : accounts.find(row => row.alias === pendingRename)
-
-  useEffect(() => {
-    if (renameTarget) {
-      setEdit({ connectionId: renameTarget.connection_id, kind: 'rename' })
-      renameOpened()
-    }
-  }, [renameOpened, renameTarget])
+  const accountList = useAccountList(card, accountActions, operation !== null && !operation.settled)
 
   const local = card.ways.local
   const serverName = localServerName(card)
@@ -126,19 +121,7 @@ export function HostedConnectorDialog({
 
   return (
     <ConnectorDialog
-      accounts={
-        <AccountsSection
-          accounts={accounts}
-          edit={edit}
-          onAdd={accountActions.add}
-          onEditChange={setEdit}
-          onReconnect={accountActions.reconnect}
-          onRemove={accountActions.remove}
-          onRename={accountActions.rename}
-          reconnecting={accountActions.reconnecting}
-          retired={retired}
-        />
-      }
+      accounts={<AccountsSection {...accountList.props} />}
       advanced={
         installed ? <LocalAdvanced controller={controller} name={serverName} onRemove={onRemoveServer} /> : undefined
       }
@@ -157,15 +140,7 @@ export function HostedConnectorDialog({
       onAuthenticate={() => void controller.authenticate(localServerName(card))}
       onConnect={onConnect}
       onDisconnect={onDisconnect}
-      onEscape={() => {
-        if (edit === null) {
-          return false
-        }
-
-        setEdit(null)
-
-        return true
-      }}
+      onEscape={accountList.cancelEdit}
       onInstall={onInstall}
       onOpenAdmin={() => void openConnectorsAdmin()}
       onOpenChange={next => {
@@ -215,4 +190,48 @@ function menuReconnect(
   const only = accounts[0]
 
   return only ? () => reconnectAccount(only) : reconnectApp
+}
+
+/** The account list's props and its one piece of local state: which name is being edited. A deep link's pending
+ *  rename opens that account's editor once this app lists it. */
+function useAccountList(card: ConnectorCardModel, actions: HostedAccountActions, connecting: boolean) {
+  const [edit, setEdit] = useState<AccountEdit | null>(null)
+  const accounts = card.ways.hosted?.accounts ?? []
+  const { pendingRename, renameOpened } = actions
+
+  const renameTarget =
+    pendingRename?.slug === card.slug ? accounts.find(row => row.alias === pendingRename.alias) : undefined
+
+  useEffect(() => {
+    if (renameTarget) {
+      setEdit({ connectionId: renameTarget.connection_id, kind: 'rename' })
+      renameOpened()
+    }
+  }, [renameOpened, renameTarget])
+
+  const props: AccountsSectionProps = {
+    accounts,
+    connecting,
+    edit,
+    onAdd: actions.add,
+    onEditChange: setEdit,
+    onReconnect: actions.reconnect,
+    onRemove: actions.remove,
+    onRename: actions.rename,
+    reconnecting: actions.reconnecting,
+    retired: card.ways.hosted?.retiredAccounts ?? []
+  }
+
+  // Escape cancels an open name edit and reports it, so the dialog stays open.
+  const cancelEdit = (): boolean => {
+    if (edit === null) {
+      return false
+    }
+
+    setEdit(null)
+
+    return true
+  }
+
+  return { cancelEdit, props }
 }

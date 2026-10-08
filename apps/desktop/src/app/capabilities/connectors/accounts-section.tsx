@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react'
+import { type Dispatch, type ReactNode, type SetStateAction, useState } from 'react'
 
 import { ListRow } from '@/app/settings/primitives'
 import { Badge } from '@/components/ui/badge'
@@ -37,9 +37,11 @@ export type AccountEdit =
 
 export interface AccountsSectionProps {
   accounts: readonly AccountRow[]
+  /** A sign-in for this app is still open; another add or reconnect would act on the wrong account. */
+  connecting: boolean
   edit: AccountEdit | null
   onAdd: (alias: string) => Promise<WriteOutcome>
-  onEditChange: (edit: AccountEdit | null) => void
+  onEditChange: Dispatch<SetStateAction<AccountEdit | null>>
   onReconnect: (account: AccountRow) => void
   onRemove: (account: AccountRow) => void
   onRename: (connectionId: string, alias: string) => Promise<WriteOutcome>
@@ -49,6 +51,7 @@ export interface AccountsSectionProps {
 
 export function AccountsSection({
   accounts,
+  connecting,
   edit,
   onAdd,
   onEditChange,
@@ -74,14 +77,15 @@ export function AccountsSection({
         ? copy.aliasTaken
         : readableError(outcome.error, t.connectorsPage.page.writeFailed).message
 
-  // The row shows the new name as soon as the editor closes; a refusal restores the old name and reopens the editor.
+  // The row shows the new name as soon as the editor closes; a refusal restores the old name and reopens the
+  // editor, unless the user has started another edit since.
   const rename = async (connectionId: string, alias: string) => {
     onEditChange(null)
 
     const error = refusal(await onRename(connectionId, alias))
 
     if (error) {
-      onEditChange({ connectionId, draft: alias, error, kind: 'rename' })
+      onEditChange(current => current ?? { connectionId, draft: alias, error, kind: 'rename' })
     }
   }
 
@@ -91,13 +95,13 @@ export function AccountsSection({
     const error = refusal(await onAdd(alias))
 
     setAdding(false)
-    onEditChange(error ? { draft: alias, error, kind: 'add' } : null)
+    onEditChange(current => (current?.kind === 'add' ? (error ? { draft: alias, error, kind: 'add' } : null) : current))
   }
 
   return (
     <section
       aria-label={copy.heading}
-      className="grid shrink-0 border-b border-(--ui-stroke-tertiary) px-3.5 py-1"
+      className="grid max-h-[40vh] shrink-0 overflow-y-auto overscroll-y-contain border-b border-(--ui-stroke-tertiary) px-3.5 py-1"
       data-slot="connector-accounts"
     >
       {accounts.map(account =>
@@ -120,7 +124,12 @@ export function AccountsSection({
             actions={
               <>
                 {account.status !== 'active' && STATUS_VIEW[account.status].reconnect ? (
-                  <Button disabled={reconnecting} onClick={() => onReconnect(account)} size="xs" variant="secondary">
+                  <Button
+                    disabled={reconnecting || connecting}
+                    onClick={() => onReconnect(account)}
+                    size="xs"
+                    variant="secondary"
+                  >
                     {t.connectorsPage.card.verb.reconnect}
                   </Button>
                 ) : null}
@@ -158,7 +167,7 @@ export function AccountsSection({
         />
       ) : accounts.length > 0 ? (
         <div className="py-2">
-          <Button onClick={() => onEditChange({ kind: 'add' })} size="xs" variant="secondary">
+          <Button disabled={connecting} onClick={() => onEditChange({ kind: 'add' })} size="xs" variant="secondary">
             {copy.addAnother}
           </Button>
         </div>

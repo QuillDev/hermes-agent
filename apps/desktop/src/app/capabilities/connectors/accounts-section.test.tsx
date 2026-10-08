@@ -54,6 +54,7 @@ function Harness() {
   return (
     <AccountsSection
       accounts={accounts.data?.accounts ?? []}
+      connecting={false}
       edit={edit}
       onAdd={async () => ({ ok: true })}
       onEditChange={setEdit}
@@ -141,6 +142,38 @@ describe('AccountsSection rename', () => {
       queryClient.getQueryData<ConnectorAccountsResult>(connectorsAccountsQueryKey(SCOPE))?.accounts[0].alias
     ).toBe('work')
     expect(screen.queryByText('office')).toBeNull()
+  })
+
+  it('a slower refusal of an older rename does not undo a newer one', async () => {
+    const answers: Array<(outcome: 'ok' | 'refused') => void> = []
+
+    serveRename(
+      () =>
+        new Promise((resolve, reject) => {
+          answers.push(outcome =>
+            outcome === 'ok'
+              ? resolve({ ...ACCOUNTS.accounts[0], alias: 'desk' })
+              : reject(new JsonRpcGatewayError('busy', { code: 5034, data: { reason: 'ACCOUNTS_UNAVAILABLE' } }))
+          )
+        })
+    )
+
+    renderSection()
+    await renameWork('office')
+    await waitFor(() => expect(screen.getByText('office')).toBeTruthy())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rename' })[0])
+    fireEvent.change(screen.getByRole('textbox', { name: 'New name for office' }), { target: { value: 'desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(answers).toHaveLength(2))
+
+    answers[1]('ok')
+    await waitFor(() => expect(screen.getByText('desk')).toBeTruthy())
+    answers[0]('refused')
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+    expect(
+      queryClient.getQueryData<ConnectorAccountsResult>(connectorsAccountsQueryKey(SCOPE))?.accounts[0].alias
+    ).toBe('desk')
   })
 
   it('refuses a duplicate or malformed name without calling the gateway', async () => {
