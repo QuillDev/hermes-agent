@@ -3,6 +3,8 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { esAuxTasks } from './es_aux_tasks'
 import { esBoot } from './es_boot'
+import { esConnectorAccounts } from './es_connector_accounts'
+import { esConnectorCard } from './es_connector_card'
 import { esLocalModels } from './es_local_models'
 import { esModelMenu } from './es_model_menu'
 import { esNotices } from './es_notices'
@@ -15,40 +17,7 @@ import { introEs } from './intro-es'
 export const esOverrides = {
   sharedMetrics: esSharedMetrics,
   intro: introEs,
-  connectors: {
-    title: 'Conecta tus apps',
-    connect: 'Conectar',
-    skip: 'Ahora no',
-    cancel: 'Dejar de esperar',
-    retry: 'Reintentar',
-    grant: 'Volver a conectar',
-    connected: 'Conectado',
-    checking: 'Comprobando tus apps…',
-    notConnected: 'No conectado',
-    skipped: 'Omitido',
-    disabled: 'No disponible',
-    failed: 'No se pudo conectar',
-    needsAuth: 'Acceso caducado',
-    opening: 'Abriendo el inicio de sesión…',
-    waiting: 'Esperando a tu navegador…',
-    timeout: 'Seguimos esperando la autorización.',
-    refresh: 'Actualizar estado',
-    connectError: 'No se pudo iniciar la autorización. Inténtalo de nuevo.',
-    connectErrorFor: (app: string) => `No se pudo iniciar la autorización para ${app}.`,
-    unavailable: 'Los conectores no están disponibles en esta sesión.',
-    ownerMissing: 'Vuelve a abrir esta conversación para gestionar sus conexiones.',
-    search: 'Buscar una app',
-    empty: 'No hay apps que coincidan',
-    disclaimer: 'Conectar es opcional. Autoriza solo las apps que quieras que use Hermes.',
-    execution: 'Herramientas de conectores',
-    setup: server => `Configurar ${server}`,
-    openInBrowser: 'Abrir en el navegador',
-    setupCancel: 'Cancelar',
-    authorizedToolsUnavailable: 'Autorizado. Herramientas no disponibles.',
-    required: 'Obligatorio',
-    namedAccount: (app: string, alias: string) => `Hermes llamó ${alias} a esta cuenta de ${app}.`,
-    renameAccount: 'Cambiar nombre'
-  },
+  connectors: esConnectorCard,
   connectorsPage: {
     title: 'Conectores',
     searchPlaceholder: (count: number) => `Buscar entre ${count} apps`,
@@ -206,30 +175,8 @@ export const esOverrides = {
       advancedHint: 'la entrada de mcp.json y los registros'
     },
 
-    accounts: {
-      heading: 'Cuentas',
-      count: (count: number) => `${count} cuenta${count === 1 ? '' : 's'}`,
-      addAnother: 'Añadir otra cuenta',
-      aliasLabel: 'Nombre de la cuenta',
-      aliasHint: 'Minúsculas, números y guiones, hasta 32. Por ejemplo trabajo o casa.',
-      aliasInvalid: 'Usa minúsculas, números y guiones, empezando por una letra o un número.',
-      aliasTaken: 'Ese nombre ya está en uso.',
-      add: 'Conectar',
-      rename: 'Cambiar nombre',
-      renameLabel: (name: string) => `Nuevo nombre para ${name}`,
-      remove: 'Quitar',
-      removeTitle: (app: string, name: string) => `¿Quitar la cuenta ${name} de ${app}?`,
-      removeBody: 'Hermes deja de actuar con esta cuenta. Tus otras cuentas siguen conectadas.',
-      retiredCount: (count: number) => `${count} retirada${count === 1 ? '' : 's'}`,
-      status: {
-        expired: 'Acceso caducado',
-        failed: 'No se pudo conectar',
-        inactive: 'Inactiva',
-        pending: 'Esperando el inicio de sesión',
-        retired: 'Sustituida al reconectar',
-        revoked: 'Acceso revocado'
-      }
-    },
+    accounts: esConnectorAccounts,
+
     tools: {
       title: 'Herramientas',
       notInstalledBody: 'Instálalo en este dispositivo para ver las herramientas que incluye.',

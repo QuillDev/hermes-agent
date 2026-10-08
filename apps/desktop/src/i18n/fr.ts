@@ -3,6 +3,8 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { frAuxTasks } from './fr_aux_tasks'
 import { frBoot } from './fr_boot'
+import { frConnectorAccounts } from './fr_connector_accounts'
+import { frConnectorCard } from './fr_connector_card'
 import { frLocalModels } from './fr_local_models'
 import { frModelMenu } from './fr_model_menu'
 import { frNotices } from './fr_notices'
@@ -15,40 +17,7 @@ import { introFr } from './intro-fr'
 export const frOverrides = {
   sharedMetrics: frSharedMetrics,
   intro: introFr,
-  connectors: {
-    title: 'Connectez vos applications',
-    connect: 'Connecter',
-    skip: 'Pas maintenant',
-    cancel: "Arrêter l'attente",
-    retry: 'Réessayer',
-    grant: 'Reconnecter',
-    connected: 'Connecté',
-    checking: 'Vérification de vos applications…',
-    notConnected: 'Non connecté',
-    skipped: 'Ignoré',
-    disabled: 'Indisponible',
-    failed: 'Connexion impossible',
-    needsAuth: 'Accès expiré',
-    opening: 'Ouverture de la connexion…',
-    waiting: 'Terminez la connexion dans votre navigateur…',
-    timeout: "Toujours en attente de l'autorisation.",
-    refresh: "Actualiser l'état",
-    connectError: "Impossible de démarrer l'autorisation. Réessayez.",
-    connectErrorFor: app => `Impossible de démarrer l'autorisation pour ${app}.`,
-    unavailable: 'Les connecteurs ne sont pas disponibles pour cette session.',
-    ownerMissing: 'Rouvrez cette conversation pour gérer ses connexions.',
-    search: 'Rechercher une application',
-    empty: 'Aucune application correspondante',
-    disclaimer: "La connexion est facultative. N'autorisez que les applications que vous voulez confier à Hermes.",
-    execution: 'Outils des connecteurs',
-    setup: server => `Configurer ${server}`,
-    openInBrowser: 'Ouvrir dans le navigateur',
-    setupCancel: 'Annuler',
-    authorizedToolsUnavailable: 'Autorisé. Outils indisponibles.',
-    required: 'Obligatoire',
-    namedAccount: (app: string, alias: string) => `Hermes a nommé ce compte ${app} ${alias}.`,
-    renameAccount: 'Renommer'
-  },
+  connectors: frConnectorCard,
   connectorsPage: {
     title: 'Connecteurs',
     searchPlaceholder: (count: number) => `Rechercher parmi ${count} applications`,
@@ -206,31 +175,8 @@ export const frOverrides = {
       advancedHint: "l'entrée mcp.json et les journaux"
     },
 
-    accounts: {
-      heading: 'Comptes',
-      count: (count: number) => `${count} compte${count === 1 ? '' : 's'}`,
-      addAnother: 'Ajouter un autre compte',
-      aliasLabel: 'Nom du compte',
-      aliasHint: 'Lettres minuscules, chiffres et tirets, 32 au plus. Par exemple travail ou maison.',
-      aliasInvalid:
-        'Utilisez des lettres minuscules, des chiffres et des tirets, en commençant par une lettre ou un chiffre.',
-      aliasTaken: 'Ce nom est déjà utilisé.',
-      add: 'Connecter',
-      rename: 'Renommer',
-      renameLabel: (name: string) => `Nouveau nom pour ${name}`,
-      remove: 'Retirer',
-      removeTitle: (app: string, name: string) => `Retirer le compte ${app} ${name} ?`,
-      removeBody: "Hermes cesse d'agir avec ce compte. Vos autres comptes restent connectés.",
-      retiredCount: (count: number) => `${count} retiré${count === 1 ? '' : 's'}`,
-      status: {
-        expired: 'Accès expiré',
-        failed: 'Connexion impossible',
-        inactive: 'Inactif',
-        pending: 'En attente de connexion',
-        retired: 'Remplacé par une reconnexion',
-        revoked: 'Accès révoqué'
-      }
-    },
+    accounts: frConnectorAccounts,
+
     tools: {
       title: 'Outils',
       notInstalledBody: "Installez-le sur cet appareil pour voir les outils qu'il apporte.",

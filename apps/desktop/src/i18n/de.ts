@@ -2,6 +2,8 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { deAuxTasks } from './de_aux_tasks'
 import { deBoot } from './de_boot'
+import { deConnectorAccounts } from './de_connector_accounts'
+import { deConnectorCard } from './de_connector_card'
 import { deLocalModels } from './de_local_models'
 import { deModelMenu } from './de_model_menu'
 import { deNotices } from './de_notices'
@@ -15,40 +17,7 @@ import { introDe } from './intro-de'
 export const deOverrides = {
   sharedMetrics: deSharedMetrics,
   intro: introDe,
-  connectors: {
-    title: 'Verbinden Sie Ihre Apps',
-    connect: 'Verbinden',
-    skip: 'Nicht jetzt',
-    cancel: 'Warten beenden',
-    retry: 'Erneut versuchen',
-    grant: 'Neu verbinden',
-    connected: 'Verbunden',
-    checking: 'Ihre Apps werden geprüft…',
-    notConnected: 'Verbindung fehlgeschlagen',
-    skipped: 'Übersprungen',
-    disabled: 'Nicht verfügbar',
-    failed: 'Verbindung fehlgeschlagen',
-    needsAuth: 'Zugriff abgelaufen',
-    opening: 'Anmeldung wird geöffnet…',
-    waiting: 'Schließen Sie die Verbindung im Browser ab…',
-    timeout: 'Freigabe steht noch aus.',
-    refresh: 'Status aktualisieren',
-    connectError: 'Freigabe konnte nicht gestartet werden. Versuchen Sie es erneut.',
-    connectErrorFor: app => `Die Freigabe für ${app} konnte nicht gestartet werden.`,
-    unavailable: 'Verbindungen sind für diese Session nicht verfügbar.',
-    ownerMissing: 'Öffnen Sie diese Konversation erneut, um ihre Verbindungen zu verwalten.',
-    search: 'App finden',
-    empty: 'Keine passende App',
-    disclaimer: 'Das Verbinden ist freiwillig. Geben Sie nur den Apps Zugriff, die Hermes verwenden soll.',
-    execution: 'Verbindungs-Tools',
-    setup: server => `${server} einrichten`,
-    openInBrowser: 'Im Browser öffnen',
-    setupCancel: 'Abbrechen',
-    authorizedToolsUnavailable: 'Autorisiert. Tools nicht verfügbar.',
-    required: 'Erforderlich',
-    namedAccount: (app: string, alias: string) => `Hermes hat dieses ${app}-Konto ${alias} genannt.`,
-    renameAccount: 'Umbenennen'
-  },
+  connectors: deConnectorCard,
   connectorsPage: {
     title: 'Konnektoren',
     searchPlaceholder: (count: number) => `${count} Apps durchsuchen`,
@@ -206,31 +175,8 @@ export const deOverrides = {
       advancedHint: 'der mcp.json-Eintrag und die Logs'
     },
 
-    accounts: {
-      heading: 'Konten',
-      count: (count: number) => `${count} ${count === 1 ? 'Konto' : 'Konten'}`,
-      addAnother: 'Weiteres Konto hinzufügen',
-      aliasLabel: 'Kontoname',
-      aliasHint: 'Kleinbuchstaben, Ziffern und Bindestriche, höchstens 32. Zum Beispiel arbeit oder privat.',
-      aliasInvalid:
-        'Verwenden Sie Kleinbuchstaben, Ziffern und Bindestriche, beginnend mit einem Buchstaben oder einer Ziffer.',
-      aliasTaken: 'Dieser Name wird bereits verwendet.',
-      add: 'Verbinden',
-      rename: 'Umbenennen',
-      renameLabel: (name: string) => `Neuer Name für ${name}`,
-      remove: 'Entfernen',
-      removeTitle: (app: string, name: string) => `Das ${app}-Konto ${name} entfernen?`,
-      removeBody: 'Hermes handelt nicht mehr über dieses Konto. Ihre anderen Konten bleiben verbunden.',
-      retiredCount: (count: number) => `${count} ersetzt`,
-      status: {
-        expired: 'Zugriff abgelaufen',
-        failed: 'Verbindung fehlgeschlagen',
-        inactive: 'Inaktiv',
-        pending: 'Wartet auf Anmeldung',
-        retired: 'Durch erneutes Verbinden ersetzt',
-        revoked: 'Zugriff widerrufen'
-      }
-    },
+    accounts: deConnectorAccounts,
+
     tools: {
       title: 'Tools',
       notInstalledBody: 'Installieren Sie ihn auf diesem Gerät, um seine Tools zu sehen.',
