@@ -124,6 +124,8 @@ export interface Translations extends NoticeTranslations {
     setupCancel: string
     authorizedToolsUnavailable: string
     required: string
+    namedAccount: (app: string, alias: string) => string
+    renameAccount: string
   }
   connectorsPage: {
     title: string
@@ -277,6 +279,30 @@ export interface Translations extends NoticeTranslations {
       usesPerMonth: string
       advanced: string
       advancedHint: string
+    }
+    accounts: {
+      heading: string
+      count: (count: number) => string
+      addAnother: string
+      aliasLabel: string
+      aliasHint: string
+      aliasInvalid: string
+      aliasTaken: string
+      add: string
+      rename: string
+      renameLabel: (name: string) => string
+      remove: string
+      removeTitle: (app: string, name: string) => string
+      removeBody: string
+      retiredCount: (count: number) => string
+      status: {
+        expired: string
+        failed: string
+        inactive: string
+        pending: string
+        retired: string
+        revoked: string
+      }
     }
     tools: {
       title: string

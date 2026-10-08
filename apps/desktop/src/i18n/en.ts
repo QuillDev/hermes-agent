@@ -60,7 +60,9 @@ export const en: Translations = {
     openInBrowser: 'Open in browser',
     setupCancel: 'Cancel',
     authorizedToolsUnavailable: 'Authorized. Tools unavailable.',
-    required: 'Required'
+    required: 'Required',
+    namedAccount: (app: string, alias: string) => `Hermes named this ${app} account ${alias}.`,
+    renameAccount: 'Rename'
   },
 
   // `connectors.*` above stays the onboarding and chat vocabulary; these are the page's own, and the two are not shared.
@@ -225,6 +227,31 @@ export const en: Translations = {
       usesPerMonth: 'uses in 30 days',
       advanced: 'Advanced',
       advancedHint: 'the mcp.json entry and logs'
+    },
+
+    accounts: {
+      heading: 'Accounts',
+      count: (count: number) => `${count} account${count === 1 ? '' : 's'}`,
+      addAnother: 'Add another account',
+      aliasLabel: 'Account name',
+      aliasHint: 'Lowercase letters, numbers and dashes, up to 32. For example work or home.',
+      aliasInvalid: 'Use lowercase letters, numbers and dashes, starting with a letter or number.',
+      aliasTaken: 'That name is already used.',
+      add: 'Connect',
+      rename: 'Rename',
+      renameLabel: (name: string) => `New name for ${name}`,
+      remove: 'Remove',
+      removeTitle: (app: string, name: string) => `Remove the ${name} ${app} account?`,
+      removeBody: 'Hermes stops acting as this account. Your other accounts stay connected.',
+      retiredCount: (count: number) => `${count} retired`,
+      status: {
+        expired: 'Access expired',
+        failed: 'Could not connect',
+        inactive: 'Inactive',
+        pending: 'Waiting for sign-in',
+        retired: 'Replaced by a reconnect',
+        revoked: 'Access revoked'
+      }
     },
 
     tools: {

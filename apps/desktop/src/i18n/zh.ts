@@ -49,7 +49,9 @@ export const zhOverrides = {
     openInBrowser: '在浏览器中打开',
     setupCancel: '取消',
     authorizedToolsUnavailable: '已授权。工具不可用。',
-    required: '必填'
+    required: '必填',
+    namedAccount: (app, alias) => `Hermes 已将这个 ${app} 账户命名为 ${alias}。`,
+    renameAccount: '重命名'
   },
   sessionImport: {
     title: '从其他应用继续',

@@ -45,7 +45,9 @@ export const deOverrides = {
     openInBrowser: 'Im Browser öffnen',
     setupCancel: 'Abbrechen',
     authorizedToolsUnavailable: 'Autorisiert. Tools nicht verfügbar.',
-    required: 'Erforderlich'
+    required: 'Erforderlich',
+    namedAccount: (app: string, alias: string) => `Hermes hat dieses ${app}-Konto ${alias} genannt.`,
+    renameAccount: 'Umbenennen'
   },
   connectorsPage: {
     title: 'Konnektoren',
@@ -202,6 +204,32 @@ export const deOverrides = {
       usesPerMonth: 'Nutzungen in 30 Tagen',
       advanced: 'Erweitert',
       advancedHint: 'der mcp.json-Eintrag und die Logs'
+    },
+
+    accounts: {
+      heading: 'Konten',
+      count: (count: number) => `${count} ${count === 1 ? 'Konto' : 'Konten'}`,
+      addAnother: 'Weiteres Konto hinzufügen',
+      aliasLabel: 'Kontoname',
+      aliasHint: 'Kleinbuchstaben, Ziffern und Bindestriche, höchstens 32. Zum Beispiel arbeit oder privat.',
+      aliasInvalid:
+        'Verwenden Sie Kleinbuchstaben, Ziffern und Bindestriche, beginnend mit einem Buchstaben oder einer Ziffer.',
+      aliasTaken: 'Dieser Name wird bereits verwendet.',
+      add: 'Verbinden',
+      rename: 'Umbenennen',
+      renameLabel: (name: string) => `Neuer Name für ${name}`,
+      remove: 'Entfernen',
+      removeTitle: (app: string, name: string) => `Das ${app}-Konto ${name} entfernen?`,
+      removeBody: 'Hermes handelt nicht mehr über dieses Konto. Ihre anderen Konten bleiben verbunden.',
+      retiredCount: (count: number) => `${count} ersetzt`,
+      status: {
+        expired: 'Zugriff abgelaufen',
+        failed: 'Verbindung fehlgeschlagen',
+        inactive: 'Inaktiv',
+        pending: 'Wartet auf Anmeldung',
+        retired: 'Durch erneutes Verbinden ersetzt',
+        revoked: 'Zugriff widerrufen'
+      }
     },
     tools: {
       title: 'Tools',

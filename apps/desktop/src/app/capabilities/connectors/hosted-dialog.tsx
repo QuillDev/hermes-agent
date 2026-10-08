@@ -6,6 +6,7 @@ import { openFreeTierSignIn } from '@/store/free-tier-sign-in'
 
 import type { McpServersController } from '../mcp/use-mcp-servers'
 
+import { type AccountEdit, AccountsSection } from './accounts-section'
 import { ConnectElement } from './connect-element'
 import { ConnectorDialog } from './connector-dialog'
 import {
@@ -14,6 +15,7 @@ import {
   accountOperationFor,
   clearAccountOperation
 } from './data/account-operations'
+import type { WriteOutcome } from './data/mutations'
 import { openConnectorsAdmin } from './data/portal'
 import { type HostedConnectorsView, useConnectorTools } from './data/queries'
 import { localServerName } from './derive'
@@ -22,10 +24,11 @@ import { localCost } from './local-dialog'
 import type { InstallField } from './local-server-control'
 import { LocalAdvanced } from './local-slots'
 import { HostedToolsPanel, LocalToolsPanel, orgDisabledCount } from './tools-panel'
-import type { ConnectorCardModel } from './types'
+import type { AccountRow, ConnectorCardModel } from './types'
 import { type WayChoice, wayInUse } from './ways-section'
 
 export interface HostedConnectorDialogProps {
+  accountActions: HostedAccountActions
   card: ConnectorCardModel
   controller: McpServersController
   hosted: HostedConnectorsView
@@ -44,7 +47,19 @@ export interface HostedConnectorDialogProps {
   togglePending: boolean
 }
 
+export interface HostedAccountActions {
+  add: (alias: string) => Promise<WriteOutcome>
+  /** An account name a deep link asked to rename; the dialog opens its editor once the account is listed. */
+  pendingRename: null | string
+  reconnect: (account: AccountRow) => void
+  reconnecting: boolean
+  remove: (account: AccountRow) => void
+  rename: (connectionId: string, alias: string) => Promise<WriteOutcome>
+  renameOpened: () => void
+}
+
 export function HostedConnectorDialog({
+  accountActions,
   card,
   controller,
   hosted,
@@ -73,6 +88,19 @@ export function HostedConnectorDialog({
     }
   }, [inUse])
 
+  const [edit, setEdit] = useState<AccountEdit | null>(null)
+  const accounts = card.ways.hosted?.accounts ?? []
+  const retired = card.ways.hosted?.retiredAccounts ?? []
+  const { pendingRename, renameOpened } = accountActions
+  const renameTarget = pendingRename === null ? undefined : accounts.find(row => row.alias === pendingRename)
+
+  useEffect(() => {
+    if (renameTarget) {
+      setEdit({ connectionId: renameTarget.connection_id, kind: 'rename' })
+      renameOpened()
+    }
+  }, [renameOpened, renameTarget])
+
   const local = card.ways.local
   const serverName = localServerName(card)
   const installed = local?.installed === true && card.plugin === undefined
@@ -98,6 +126,19 @@ export function HostedConnectorDialog({
 
   return (
     <ConnectorDialog
+      accounts={
+        <AccountsSection
+          accounts={accounts}
+          edit={edit}
+          onAdd={accountActions.add}
+          onEditChange={setEdit}
+          onReconnect={accountActions.reconnect}
+          onRemove={accountActions.remove}
+          onRename={accountActions.rename}
+          reconnecting={accountActions.reconnecting}
+          retired={retired}
+        />
+      }
       advanced={
         installed ? <LocalAdvanced controller={controller} name={serverName} onRemove={onRemoveServer} /> : undefined
       }
@@ -108,14 +149,23 @@ export function HostedConnectorDialog({
       installing={installing}
       menu={
         <ConnectorDialogMenu
-          onDisconnect={card.ways.hosted?.connected === true ? onDisconnect : undefined}
-          onReconnect={onReconnect}
+          onDisconnect={card.ways.hosted?.connected === true && accounts.length === 0 ? onDisconnect : undefined}
+          onReconnect={menuReconnect(accounts, onReconnect, accountActions.reconnect)}
           onRefreshTools={tools.refresh}
         />
       }
       onAuthenticate={() => void controller.authenticate(localServerName(card))}
       onConnect={onConnect}
       onDisconnect={onDisconnect}
+      onEscape={() => {
+        if (edit === null) {
+          return false
+        }
+
+        setEdit(null)
+
+        return true
+      }}
       onInstall={onInstall}
       onOpenAdmin={() => void openConnectorsAdmin()}
       onOpenChange={next => {
@@ -150,4 +200,19 @@ export function HostedConnectorDialog({
 
 function stillOpen(operation: AccountOperation | null): operation is AccountOperation {
   return operation !== null && (!operation.settled || !operation.targets.every(target => target.state === 'connected'))
+}
+
+/** The menu's Reconnect speaks for the app only while it has one account; with several, each row has its own. */
+function menuReconnect(
+  accounts: readonly AccountRow[],
+  reconnectApp: () => void,
+  reconnectAccount: (account: AccountRow) => void
+): (() => void) | undefined {
+  if (accounts.length > 1) {
+    return undefined
+  }
+
+  const only = accounts[0]
+
+  return only ? () => reconnectAccount(only) : reconnectApp
 }
