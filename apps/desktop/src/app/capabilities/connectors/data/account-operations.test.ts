@@ -24,4 +24,10 @@ describe('accountOperationFor', () => {
     expect(accountOperationFor(operations, 'gmail', { connectionId: 'remote', profile: 'home' })?.opId).toBe('b')
     expect(accountOperationFor(operations, 'gmail', 'other')).toBeNull()
   })
+
+  it('treats a bare profile and the same profile pinned to the active connection as one scope', () => {
+    const operations = { a: operation('a', 'home') }
+
+    expect(accountOperationFor(operations, 'gmail', { connectionId: 'local', profile: 'home' })?.opId).toBe('a')
+  })
 })
