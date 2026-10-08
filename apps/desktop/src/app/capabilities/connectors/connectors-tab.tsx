@@ -179,7 +179,7 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
   }
 
   const runVerb = (card: ConnectorCardModel) => {
-    const open = accountOperationFor(operations, card.slug)
+    const open = accountOperationFor(operations, card.slug, profile)
 
     switch (card.verb) {
       case 'authenticate':

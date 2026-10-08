@@ -83,7 +83,7 @@ export function HostedConnectorDialog({
   togglePending
 }: HostedConnectorDialogProps) {
   const tools = useConnectorTools(profile, card.slug, hosted.listSlugs.has(card.slug))
-  const operation = accountOperationFor(useStore($accountOperations), card.slug)
+  const operation = accountOperationFor(useStore($accountOperations), card.slug, profile)
   const inUse = wayInUse(card.ways)
   const [way, setWay] = useState<WayChoice>(inUse ?? 'hosted')
 

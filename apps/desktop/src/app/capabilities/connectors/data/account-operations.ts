@@ -6,7 +6,7 @@ import type {
 } from '@hermes/shared'
 import { atom } from 'nanostores'
 
-import type { ProfileScope } from '@/hermes'
+import { type ProfileScope, profileScopeKey } from '@/hermes'
 import { type ConnectionTarget, parseConnectionTarget } from '@/store/connection-request'
 
 import { invalidateConnectors } from './keys'
@@ -44,11 +44,17 @@ function resumeConnect(slugs: readonly string[]): void {
 const parseTargets = (targets: ConnectionUpdatePayload['targets']): ConnectionTarget[] =>
   targets.map(parseConnectionTarget).filter((target): target is ConnectionTarget => target !== null)
 
+/** The open (else newest) operation for one app in one profile scope; other profiles' sign-ins are not this one's. */
 export function accountOperationFor(
   operations: Readonly<Record<string, AccountOperation>>,
-  slug: string
+  slug: string,
+  scope: ProfileScope
 ): AccountOperation | null {
-  const mine = Object.values(operations).filter(operation => operation.connectors.includes(slug))
+  const key = profileScopeKey(scope)
+
+  const mine = Object.values(operations).filter(
+    operation => operation.connectors.includes(slug) && profileScopeKey(operation.scope) === key
+  )
 
   return mine.find(operation => !operation.settled) ?? mine[mine.length - 1] ?? null
 }
