@@ -10,6 +10,7 @@ import functools
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
@@ -369,6 +370,20 @@ def _create_thread(
     return json.dumps({"success": True, "thread_id": thread["id"], "name": thread.get("name")})
 
 
+def _rename_thread(token: str, channel_id: str, name: str, **_kwargs: Any) -> str:
+    """Rename a thread, never a normal channel; leave all other fields untouched."""
+    if not isinstance(channel_id, str) or not re.fullmatch(r"[0-9]{17,20}", channel_id):
+        return tool_error("channel_id must be a Discord snowflake (17-20 ASCII digits).")
+    if not isinstance(name, str) or not name.strip() or not 1 <= len(name) <= 100:
+        return tool_error("Thread name must contain 1-100 characters and cannot be blank.")
+    path = f"/channels/{channel_id}"
+    channel = _discord_request("GET", path, token)
+    if channel.get("type") not in (10, 11, 12):
+        return tool_error("Target channel is not a Discord thread.")
+    thread = _discord_request("PATCH", path, token, body={"name": name})
+    return json.dumps({"success": True, "thread_id": thread["id"], "name": thread["name"]})
+
+
 def _mutation(method: str, path: str, message: str):
     """Body-less write action: ``path``/``message`` are format templates over the action kwargs."""
     def _action(token: str, **kw: Any) -> str:
@@ -405,6 +420,7 @@ _ACTION_MANIFEST = [
     ("unpin_message", _unpin_message, "(channel_id, message_id)", "unpin a message"),
     ("delete_message", _delete_message, "(channel_id, message_id)", "delete a message"),
     ("create_thread", _create_thread, "(channel_id, name)", "create a public thread; optional message_id anchor"),
+    ("rename_thread", _rename_thread, "(channel_id, name)", "rename an existing thread; channel_id must be the thread ID, not its parent"),
     ("add_role", _add_role, "(guild_id, user_id, role_id)", "assign a role"),
     ("remove_role", _remove_role, "(guild_id, user_id, role_id)", "remove a role"),
 ]
@@ -413,9 +429,9 @@ _REQUIRED_PARAMS: dict[str, list[str]] = {
     name: [p.strip() for p in sig.strip("()").split(",") if p.strip()]
     for name, _fn, sig, _desc in _ACTION_MANIFEST}
 
-# Two tools share one action table: ``discord`` (core, the participation trio every bot
+# Two tools share one action table: ``discord`` (core, the participation actions every bot
 # user wants) and ``discord_admin`` (everything else).
-_CORE_ACTION_NAMES = frozenset({"fetch_messages", "search_members", "create_thread"})
+_CORE_ACTION_NAMES = frozenset({"fetch_messages", "search_members", "create_thread", "rename_thread"})
 _CORE_ACTIONS = {k: v for k, v in _ACTIONS.items() if k in _CORE_ACTION_NAMES}
 _ADMIN_ACTIONS = {k: v for k, v in _ACTIONS.items() if k not in _CORE_ACTION_NAMES}
 
@@ -479,7 +495,7 @@ _SCHEMA_PROPERTIES: dict[str, Any] = {
     "role_id": {"type": "string", "description": "Discord role ID."},
     "message_id": {"type": "string", "description": "Discord message ID."},
     "query": {"type": "string", "description": "Member name prefix to search for (search_members)."},
-    "name": {"type": "string", "description": "New thread name (create_thread)."},
+    "name": {"type": "string", "description": "Thread name (create_thread, rename_thread); 1-100 characters."},
     "limit": {
         "type": "integer",
         "minimum": 1,
@@ -554,6 +570,9 @@ _ACTION_403_HINT = {
     "unpin_message": f"{_NO_MANAGE_MESSAGES}.",
     "delete_message": f"{_NO_MANAGE_MESSAGES}, or cannot view the channel/message.",
     "create_thread": "Bot lacks CREATE_PUBLIC_THREADS in this channel, or cannot view it.",
+    "rename_thread": (
+        "Bot cannot view or edit this thread (VIEW_CHANNEL / MANAGE_THREADS). "
+        "Archived threads must be unarchived before renaming; this action only changes the name."),
     "add_role": (
         f"{_ROLE_HIERARCHY} Roles can only be assigned below the bot's own position in the role hierarchy."),
     "remove_role": _ROLE_HIERARCHY,
@@ -613,7 +632,7 @@ def _run_discord_action(action: str, valid_actions: dict[str, Any], tool_label: 
         return tool_error(f"Unexpected error: {e}")
 
 
-# ``discord`` = core participation trio; ``discord_admin`` = server management.
+# ``discord`` = core participation actions; ``discord_admin`` = server management.
 discord_core = functools.partial(_run_discord_action, valid_actions=_CORE_ACTIONS, tool_label="discord")
 discord_admin_handler = functools.partial(
     _run_discord_action, valid_actions=_ADMIN_ACTIONS, tool_label="discord_admin")
