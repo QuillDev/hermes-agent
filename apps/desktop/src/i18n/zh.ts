@@ -2,8 +2,10 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introZh } from './intro-zh'
+import { sessionClientsCopy } from './session-clients'
 import { zhAuxTasks } from './zh_aux_tasks'
 import { zhConnectorCard } from './zh_connector_card'
+import { zhExternalOpenFailed } from './zh_external_open'
 import { zhLocalModels } from './zh_local_models'
 import { zhModelMenu } from './zh_model_menu'
 import { zhNotices } from './zh_notices'
@@ -13,12 +15,8 @@ import { zhSharedMetrics } from './zh_shared_metrics'
 import { zhUpdateChannel } from './zh_update_channel'
 
 export const zhOverrides = {
-  externalOpenFailed: {
-    title: '无法打开此链接',
-    message: '没有注册用于打开此地址的浏览器。请复制链接并手动打开。',
-    copyUrl: '复制链接',
-    close: '关闭'
-  },
+  sessionClients: sessionClientsCopy['zh'],
+  externalOpenFailed: zhExternalOpenFailed,
   sharedMetrics: zhSharedMetrics,
   intro: introZh,
   connectors: zhConnectorCard,

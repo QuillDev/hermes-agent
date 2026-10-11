@@ -855,6 +855,8 @@ def _(rid, params: dict) -> dict:
         if not isolated_response.get("error"):
             # The truncation already happened inline above (memory + DB).
             isolated_response["result"].update(survivor_fields)
+            from tui_gateway.session_clients import input_accepted
+            input_accepted(sid, text, isolated_response['result'].get('user_row_id'), display_kind)
             return isolated_response
         # An ordinal/id alone is not consent. A client that carries a leftover ordinal into an ORDINARY
         # submit sends a request that is indistinguishable, field by field, from a real rewind — same
@@ -873,6 +875,8 @@ def _(rid, params: dict) -> dict:
     staged_user = session.get("_submit_user_row") or {}
     if isinstance(staged_user.get("_row_id"), int):
         survivor_fields["user_row_id"] = staged_user["_row_id"]
+    from tui_gateway.session_clients import input_accepted
+    input_accepted(sid, text, staged_user.get("_row_id"), display_kind)
     # A completed FAILED build must not wedge the session: rebuild, don't replay it.
     if not _restart_completed_failed_agent_build(sid, session, session.get("agent_ready")):
         _start_agent_build(sid, session)

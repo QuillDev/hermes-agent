@@ -46,6 +46,7 @@ import type { CreateBackendSessionForSend } from '../use-session-actions/create-
 import { resolveSessionOwner, resolveSessionProfile } from '../use-session-actions/utils'
 
 import { registerRecoveredRuntime, singleFlightSessionResume, takeRecoveredRuntime } from './single-flight-resume'
+import { buildContextText, replaceOptimisticUserMessage } from './submit-context'
 import {
   acquireSubmitInFlight,
   type GatewayRequest,
@@ -215,23 +216,6 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       // Images use their bounded base64 thumbnail so the optimistic bubble
       // renders inline without embedding the full source — see optimisticAttachmentRef.
       let attachmentRefs = attachments.map(optimisticAttachmentRef).filter((r): r is string => Boolean(r))
-
-      const buildContextText = (atts: ComposerAttachment[]): string => {
-        // atts may be the post-sync array, which can reintroduce holes; filter
-        // before touching a.refText / a.kind.
-        const present = atts.filter((a): a is ComposerAttachment => Boolean(a))
-
-        const contextRefs = present
-          .map(a => a.refText)
-          .filter(Boolean)
-          .join('\n')
-
-        // Terminal fences live inside visibleText (frozen above / at enqueue).
-        return (
-          [contextRefs, visibleText].filter(Boolean).join('\n\n') ||
-          (present.some(a => a.kind === 'image') ? 'What do you see in this image?' : '')
-        )
-      }
 
       // Queue drains fire on the busy→false settle edge, where busyRef (synced
       // from $busy by a separate effect) may still read true — honoring it would
@@ -463,12 +447,13 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
       // the optimistic bubble in place.
       const submittedAt = Date.now() / 1000
 
-      const buildUserMessage = (): ChatMessage => ({
+      const buildUserMessage = (contextAttachments = attachments): ChatMessage => ({
         id: optimisticId,
         role: 'user',
         parts: [textPart(bubbleText || (attachmentRefs.length ? '' : attachments.map(a => a.label).join(', ')))],
         timestamp: submittedAt,
-        attachmentRefs
+        attachmentRefs,
+        submittedInputText: buildContextText(contextAttachments, visibleText)
       })
 
       const releaseBusy = () => {
@@ -541,10 +526,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         revokeDiscardedAttachmentPreviews(attachments, syncedAttachments)
         updateSessionState(
           sid,
-          state => ({
-            ...state,
-            messages: state.messages.map(message => (message.id === optimisticId ? buildUserMessage() : message))
-          }),
+          state => replaceOptimisticUserMessage(state, buildUserMessage(syncedAttachments)),
           targetStoredSessionId
         )
       }
@@ -883,7 +865,7 @@ export function useSubmitPrompt(deps: SubmitPromptDeps) {
         // Images keep their inline bounded thumbnail — see optimisticAttachmentRef.
         attachmentRefs = syncedAttachments.map(optimisticAttachmentRef).filter((r): r is string => Boolean(r))
         rewriteOptimistic(liveSessionId, syncedAttachments)
-        const text = buildContextText(syncedAttachments)
+        const text = buildContextText(syncedAttachments, visibleText)
 
         const submitParams = (targetId: string) => ({
           session_id: targetId,

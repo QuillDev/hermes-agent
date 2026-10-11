@@ -4,6 +4,7 @@ import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introJa } from './intro-ja'
 import { jaAuxTasks } from './ja_aux_tasks'
 import { jaConnectors } from './ja_connectors'
+import { jaExternalOpen } from './ja_external_open'
 import { jaLocalModels } from './ja_local_models'
 import { jaModelMenu } from './ja_model_menu'
 import { jaNotices } from './ja_notices'
@@ -12,15 +13,12 @@ import { jaPluginSettings } from './ja_plugins'
 import { jaProjects } from './ja_projects'
 import { jaSharedMetrics } from './ja_shared_metrics'
 import { jaUpdateChannel } from './ja_update_channel'
+import { sessionClientsCopy } from './session-clients'
 
 export const jaOverrides = {
   connectors: jaConnectors.connectors,
-  externalOpenFailed: {
-    title: 'このリンクを開けませんでした',
-    message: 'このアドレスを開くブラウザが登録されていません。リンクをコピーして手動で開いてください。',
-    copyUrl: 'リンクをコピー',
-    close: '閉じる'
-  },
+  sessionClients: sessionClientsCopy['ja'],
+  externalOpenFailed: jaExternalOpen,
   sharedMetrics: jaSharedMetrics,
   intro: introJa,
   sessionImport: jaConnectors.sessionImport,

@@ -113,6 +113,26 @@ event("notice", NoticePayload, doc="Informational one-liner for the session (cap
 event("message.start", None, doc="A turn began streaming; no payload.")
 
 
+class SessionClientsInputPayload(Payload):
+    text: str
+    row_id: int | None = None
+    origin: str | None = None
+
+
+event("session.clients.input", SessionClientsInputPayload,
+      doc="A user prompt accepted by the shared execution owner; row_id deduplicates optimistic bubbles.")
+
+
+class SessionClientsAttachmentPayload(Payload):
+    path: str
+    name: str
+    origin: str | None = None
+
+
+event("session.clients.attachment", SessionClientsAttachmentPayload,
+      doc="An attachment accepted by the shared execution owner, on this host and profile only.")
+
+
 class StreamDeltaPayload(Payload):
     """``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``),
     ``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning``

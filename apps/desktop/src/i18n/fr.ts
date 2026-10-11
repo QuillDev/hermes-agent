@@ -13,8 +13,10 @@ import { frProjects } from './fr_projects'
 import { frSharedMetrics } from './fr_shared_metrics'
 import { frUpdateChannel } from './fr_update_channel'
 import { introFr } from './intro-fr'
+import { sessionClientsCopy } from './session-clients'
 
 export const frOverrides = {
+  sessionClients: sessionClientsCopy['fr'],
   sharedMetrics: frSharedMetrics,
   intro: introFr,
   connectors: frConnectorCard,

@@ -217,6 +217,15 @@ method("session.activate", params=SessionActivateParams, result=SessionActivateR
 
 
 # ── listing ───────────────────────────────────────────────────────────────────────────────────
+class SessionClientsShareResult(Result):
+    token: str
+    expires_at: float
+
+
+method("session.clients.share", params=SessionParams, result=SessionClientsShareResult,
+       doc="Explicitly share a live session using a single-use, profile-local, ten-minute invitation.")
+
+
 
 
 class SessionListParams(ProfileParams):

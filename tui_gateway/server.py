@@ -3691,3 +3691,5 @@ for _m in (
     _methods_i18n, _methods_shared_metrics, _methods_start_chat):
     _m.register(sys.modules[__name__])
 del _m
+from . import session_clients as _session_clients
+_session_clients.register(sys.modules[__name__])

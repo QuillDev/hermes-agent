@@ -3,6 +3,7 @@ import { defineFieldCopy } from '@/app/settings/field-copy'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { ruAuxTasks } from './ru_aux_tasks'
 import { ruConnectors } from './ru_connectors'
+import { ruFileMenu } from './ru_file_menu'
 import { ruModelMenu } from './ru_model_menu'
 import { ruNotices } from './ru_notices'
 import { ruOnboarding } from './ru_onboarding'
@@ -10,6 +11,7 @@ import { ruPluginSettings } from './ru_plugins'
 import { ruProjects } from './ru_projects'
 import { ruSharedMetrics } from './ru_shared_metrics'
 import { ruUpdateChannel } from './ru_update_channel'
+import { sessionClientsCopy } from './session-clients'
 
 // RU_PLURAL: (count, one, few, many) — русские формы сущ. падежа
 // RU_NOUN: (count, one, few, many) — формы род. множественного
@@ -34,6 +36,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 
 export const ruOverrides = {
   connectors: ruConnectors.connectors,
+  sessionClients: sessionClientsCopy['ru'],
   sharedMetrics: ruSharedMetrics,
   sessionImport: ruConnectors.sessionImport,
   common: {
@@ -78,25 +81,7 @@ export const ruOverrides = {
     on: 'Вкл',
     off: 'Выкл'
   },
-  fileMenu: {
-    revealFinder: 'Показать в Finder',
-    revealExplorer: 'Показать в Проводнике',
-    revealFileManager: 'Открыть содержащую папку',
-    revealInSidebar: 'Показать в дереве файлов',
-    copyPath: 'Копировать путь',
-    copyRelativePath: 'Копировать относительный путь',
-    download: 'Скачать',
-    downloadSaved: 'Сохранено',
-    downloadFailed: 'Не удалось скачать',
-    rename: 'Переименовать…',
-    delete: 'Удалить',
-    renameTitle: 'Переименование',
-    renameLabel: 'Новое имя',
-    deleteTitle: name => `Удалить ${name}?`,
-    deleteBody: 'Элемент будет перемещён в корзину — его можно восстановить оттуда.',
-    pathCopied: 'Путь скопирован',
-    revealMissing: 'Этой папки нет на этом компьютере'
-  },
+  fileMenu: ruFileMenu,
   boot: {
     ready: 'Hermes Desktop готов',
     desktopBootFailedWithMessage: message => `Не удалось запустить приложение: ${message}`,

@@ -21,6 +21,7 @@ import { handleFreeTierEvent } from './free-tier'
 import { handleInputRequestEvent } from './input-requests'
 import { handleLifecycleEvent } from './lifecycle'
 import { handleMessageStreamEvent } from './message-stream'
+import { handleSessionClientsEvent } from './session-clients'
 import { handleControlEvent } from './session-control'
 import { handleSessionInfoEvent } from './session-info'
 import { handleStatusEvent } from './status'
@@ -81,6 +82,7 @@ const PROVIDER_WAIT_SUPERSEDING_EVENT_TYPES = new Set([
 // Ordered family handlers; each consumes its own event types and reports
 // whether it did, so dispatch stops at the first taker.
 const HANDLERS: GatewayEventHandler[] = [
+  handleSessionClientsEvent,
   handleLifecycleEvent,
   handleFreeTierEvent,
   handleSessionInfoEvent,

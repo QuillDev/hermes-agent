@@ -280,7 +280,8 @@ _CONFIG_GETTERS = {
     "focus": lambda params: {"value": "on" if bool(_display_cfg().get("focus_view", False)) else "off",
                              "tool_progress": _load_tool_progress_mode()},
     "mouse": lambda params: {"value": _display_mouse_tracking(_load_cfg().get("display"))},
-    "mtime": _cfg_get_mtime}
+    "mtime": _cfg_get_mtime,
+    "session_clients.enabled": lambda params: {"value": bool(_load_cfg().get("session_clients", {}).get("enabled", False))}}
 # Getters whose failure is a JSON-RPC error of this code (others propagate to dispatch).
 _CONFIG_GET_ERR = {"provider": 5013, "approval_mode": 5001, "approvals.mode": 5001}
 

@@ -7,6 +7,7 @@ import { enBoot } from './en_boot'
 import { enCatalogInstall } from './en_catalog_install'
 import { enConnectorAccounts } from './en_connector_accounts'
 import { enConnectorCard } from './en_connector_card'
+import { enExternalOpen } from './en_external_open'
 import { enLocalModels } from './en_local_models'
 import { enModelMenu } from './en_model_menu'
 import { enNotices } from './en_notices'
@@ -15,19 +16,12 @@ import { enProjects } from './en_projects'
 import { enSharedMetrics } from './en_shared_metrics'
 import { enUninstallSection } from './en_uninstall_section'
 import { enUpdateChannel } from './en_update_channel'
+import { sessionClientsCopy } from './session-clients'
 import type { Translations } from './types'
 
 export const en: Translations = {
-  externalOpenFailed: {
-    title: 'Couldn’t open this link',
-    message: 'No browser is registered to open this address. Copy the link and open it manually.',
-    copyUrl: 'Copy link',
-    close: 'Close',
-    missing: {
-      title: 'File not found',
-      message: 'This file does not exist — it may have been deleted or moved, or it lives on another machine.'
-    }
-  },
+  sessionClients: sessionClientsCopy['en'],
+  externalOpenFailed: enExternalOpen,
   sharedMetrics: enSharedMetrics,
   appTour: enAppTour,
   // English editorial copy stays in the shipped JSONL; other locales override it.

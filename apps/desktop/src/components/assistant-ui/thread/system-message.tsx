@@ -11,6 +11,8 @@ import { ToolIcon } from '@/components/ui/tool-icon'
 import { LinkifiedText } from '@/lib/external-link'
 import { cn } from '@/lib/utils'
 
+import { ReceivedAttachment } from './received-attachment'
+
 const SLASH_STATUS_RE = /^slash:(?<command>\/[^\n]+)\n(?<output>[\s\S]*)$/
 const STEER_NOTE_RE = /^steer:(?<text>[\s\S]+)$/
 const REVIEW_NOTE_RE = /^review:(?<label>[^:\n]+):?\s*(?<detail>[\s\S]*)$/
@@ -61,9 +63,14 @@ export const BackgroundResult: FC<BackgroundResultProps> = ({ text, report, proc
 }
 
 export const SystemMessage: FC = () => {
+  const attachment = useAuiState(s => s.message.metadata.custom?.receivedAttachment)
   const text = useAuiState(s => messageContentText(s.message.content))
   const asyncResult = useAuiState(s => s.message.metadata.custom?.asyncResult)
   const processResult = useAuiState(s => s.message.metadata.custom?.asyncResultKind === 'process')
+
+  if (attachment) {
+    return <ReceivedAttachment attachment={attachment as { path: string; name: string }} />
+  }
 
   if (!text) {
     return null

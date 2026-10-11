@@ -29,6 +29,9 @@ def _handle_admitted_request(req: dict) -> dict | None:
         params, problem = _contracts.validate_params(contract, params)
         if problem is not None:
             return _err(rid, 4000, problem)
+    from tui_gateway.session_clients import route_request
+    if (proxied := route_request(method, params, rid)) is not None:
+        return proxied
     token = _current_rpc_method.set(method)
     try:
         response = fn(rid, params)
@@ -39,6 +42,9 @@ def _handle_admitted_request(req: dict) -> dict | None:
     if contract is not None and isinstance(response, dict) and isinstance(response.get("result"), dict):
         _contracts.check_params_accepted(contract, params)
         _contracts.check_result(contract, response["result"])
+    if isinstance(response, dict):
+        from tui_gateway.session_clients import rpc_observed
+        rpc_observed(method, params, response)
     return response
 
 

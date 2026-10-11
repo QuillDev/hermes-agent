@@ -13,8 +13,10 @@ import { esProjects } from './es_projects'
 import { esSharedMetrics } from './es_shared_metrics'
 import { esUpdateChannel } from './es_update_channel'
 import { introEs } from './intro-es'
+import { sessionClientsCopy } from './session-clients'
 
 export const esOverrides = {
+  sessionClients: sessionClientsCopy['es'],
   sharedMetrics: esSharedMetrics,
   intro: introEs,
   connectors: esConnectorCard,

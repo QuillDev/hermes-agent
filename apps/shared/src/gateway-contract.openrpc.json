@@ -3211,6 +3211,24 @@
       }
     },
     {
+      "name": "session.clients.share",
+      "summary": "Explicitly share a live session using a single-use, profile-local, ten-minute invitation.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SessionParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SessionClientsShareResult"
+        }
+      }
+    },
+    {
       "name": "session.close",
       "summary": "Tear down a live session (its stored row stays resumable).",
       "params": [
@@ -29613,6 +29631,94 @@
         "title": "SessionBranchWholeResult",
         "type": "object"
       },
+      "SessionClientsAttachmentPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ],
+        "title": "SessionClientsAttachmentPayload",
+        "type": "object"
+      },
+      "SessionClientsInputPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Id"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "SessionClientsInputPayload",
+        "type": "object"
+      },
+      "SessionClientsShareResult": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "SessionClientsShareResult",
+        "type": "object"
+      },
       "SessionCloseParams": {
         "additionalProperties": false,
         "properties": {
@@ -41000,6 +41106,30 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/ReviewSummaryPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "session.clients.attachment",
+      "summary": "An attachment accepted by the shared execution owner, on this host and profile only.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/SessionClientsAttachmentPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "session.clients.input",
+      "summary": "A user prompt accepted by the shared execution owner; row_id deduplicates optimistic bubbles.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/SessionClientsInputPayload"
           }
         }
       ]

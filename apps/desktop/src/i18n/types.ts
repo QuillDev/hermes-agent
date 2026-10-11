@@ -8,12 +8,14 @@
 import type { ErrorCodeKey } from '@/lib/error-surface'
 import type { TipId } from '@/lib/tips/catalog'
 
+import type { SessionClientsTranslations } from './session-clients'
 import type { AppTourTranslations, HandoffTourTranslations } from './types_app_tour'
 import type { AuxTaskCopyMap } from './types_aux_tasks'
 import type { BillingTranslations } from './types_billing'
 import type { BootTranslations } from './types_boot'
 import type { CatalogInstallTranslations } from './types_catalog_install'
 import type { ConnectorAccountsTranslations, ConnectorCardTranslations } from './types_connectors'
+import type { ExternalOpenTranslations } from './types_external_open'
 import type { ModelMenuTranslations } from './types_model_menu'
 import type { NoticeTranslations } from './types_notices'
 import type { OnboardingTranslations } from './types_onboarding'
@@ -77,19 +79,11 @@ interface ModeOptionCopy {
 }
 
 export interface Translations extends NoticeTranslations {
+  sessionClients: SessionClientsTranslations
   /** Shared-metrics consent: first-run dialog + Settings › Safety toggles. */
   sharedMetrics: SharedMetricsTranslations
   appTour: AppTourTranslations
-  externalOpenFailed: {
-    title: string
-    message: string
-    copyUrl: string
-    close: string
-    missing: {
-      title: string
-      message: string
-    }
-  }
+  externalOpenFailed: ExternalOpenTranslations
   intro: {
     stock: Record<string, string[]>
     custom: (label: string) => string[]

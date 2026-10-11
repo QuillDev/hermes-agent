@@ -1293,18 +1293,18 @@ class GatewayInboundMixin(GatewayPluginInjectionMixin):
         if not is_internal:
             from hermes_cli.observability.shared_metrics_events import record_gateway_slash_command
             record_gateway_slash_command(event)
-        # TERMINAL-DECLINE LATCH TEARDOWN. Deliberately placed AFTER admission,
-        # not on the adapter's raw inbound: profile routing, the ignored-channel
-        # guard, plugin hooks and user authorization all reject events above,
-        # and a rejected event must not be able to clear a refusal belonging to
-        # an active turn. This is also the single entry point every lane shares
-        # — Discord interaction passthrough builds its own MessageEvent and
-        # calls handle_message directly, so a teardown on the relay's inbound
-        # handler left those turns muted.
+        # Teardown follows admission so rejected events cannot clear an active refusal.
+        # This shared entry point also covers Discord interaction passthrough, which
+        # bypasses the adapter's raw inbound handler.
 
         _paused_notice = self._hm_estop_gate(event, source, is_internal)
         if _paused_notice is not None:
             return _paused_notice
+
+        from gateway.session_clients import handle_session_client_message
+        _shared_handled, _shared_reply = await handle_session_client_message(self, event)
+        if _shared_handled:
+            return _shared_reply
 
         _quick_key = self._session_key_for_source(source)
         _reply = await self._hm_pending_reply_intercepts(event, source, _quick_key)

@@ -3199,6 +3199,10 @@ export interface SessionActivateResult {
   todo_state?: TodoState | null
   auto_continue?: AutoContinue | null
 }
+export interface SessionClientsShareResult {
+  token: string
+  expires_at: number
+}
 export interface SessionListParams {
   profile?: string | null
   title?: string | null
@@ -4673,6 +4677,16 @@ export interface ErrorPayload {
 export interface NoticePayload {
   message: string
 }
+export interface SessionClientsInputPayload {
+  text: string
+  row_id?: number | null
+  origin?: string | null
+}
+export interface SessionClientsAttachmentPayload {
+  path: string
+  name: string
+  origin?: string | null
+}
 /** ``prompt_turn._invoke_agent._stream`` (message.delta: ``text`` + optional ``rendered``), ``agent_callbacks._agent_cbs`` (reasoning.delta / thinking.delta), ``tool_progress._progress_reasoning`` (reasoning.available). ``verbose`` rides only when the session's verbose reasoning mode is on. */
 export interface StreamDeltaPayload {
   text: string
@@ -5367,6 +5381,8 @@ export interface RpcMethods {
   'session.branch_stored': { params: SessionBranchStoredParams; result: SessionBranchStoredResult }
   /** session.branch of the whole history without echoing the copied transcript back. */
   'session.branch_whole': { params: SessionBranchWholeParams; result: SessionBranchWholeResult }
+  /** Explicitly share a live session using a single-use, profile-local, ten-minute invitation. */
+  'session.clients.share': { params: SessionParams; result: SessionClientsShareResult }
   /** Tear down a live session (its stored row stays resumable). */
   'session.close': { params: SessionCloseParams; result: SessionCloseResult }
   /** Manual /compress of an idle session, optionally focused on a topic. */
@@ -5708,6 +5724,7 @@ export const RPC_METHODS = [
   'session.branch',
   'session.branch_stored',
   'session.branch_whole',
+  'session.clients.share',
   'session.close',
   'session.compress',
   'session.context_breakdown',
@@ -5936,6 +5953,10 @@ export interface BackendGatewayEventMap {
   'request.cancel': RequestCancelPayload
   /** Background review of the last turn finished. */
   'review.summary': ReviewSummaryPayload
+  /** An attachment accepted by the shared execution owner, on this host and profile only. */
+  'session.clients.attachment': SessionClientsAttachmentPayload
+  /** A user prompt accepted by the shared execution owner; row_id deduplicates optimistic bubbles. */
+  'session.clients.input': SessionClientsInputPayload
   /** Persisted goal / loop / heartbeat state changed. */
   'session.control.update': SessionControlUpdatePayload
   /** Live session settings snapshot (``server._session_info``); also the ``info`` of create/resume/activate. */
@@ -6045,6 +6066,8 @@ export const GATEWAY_EVENT_TYPES = [
   'reasoning.delta',
   'request.cancel',
   'review.summary',
+  'session.clients.attachment',
+  'session.clients.input',
   'session.control.update',
   'session.info',
   'session.reclaimed',

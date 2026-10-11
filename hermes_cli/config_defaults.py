@@ -30,7 +30,7 @@ def _aux(timeout, *, reasoning_effort=True, **extra):
     return d
 
 
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG = {"session_clients": {"enabled": False},  # Explicit invitations only; no automatic private mirroring.
     "model": "",
     "providers": {},
     "fallback_providers": [],

@@ -38,3 +38,17 @@ def test_a_non_boolean_is_refused_rather_than_written(config_home):
 
     assert answer["error"]["code"] == 4002
     assert not config_home.exists()
+
+
+def test_session_sharing_setting_is_off_until_explicitly_enabled(config_home):
+    from tui_gateway.session_clients import enabled
+    get = server._methods['config.get']
+    assert get(1, {'key': 'session_clients.enabled'})['result']['value'] is False
+    assert not enabled(config_home.parent)
+    assert _set('session_clients.enabled', True)['result']['value'] is True
+    assert get(1, {'key': 'session_clients.enabled'})['result']['value'] is True
+    assert enabled(config_home.parent)
+    assert _set('session_clients.enabled', False)['result']['value'] is False
+    assert not enabled(config_home.parent)
+    assert _set('session_clients.enabled', 'sometimes')['error']['code'] == 4002
+    assert yaml.safe_load(config_home.read_text())['session_clients']['enabled'] is False

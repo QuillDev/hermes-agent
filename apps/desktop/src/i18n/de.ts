@@ -13,8 +13,10 @@ import { deSharedMetrics } from './de_shared_metrics'
 import { deUpdateChannel } from './de_update_channel'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introDe } from './intro-de'
+import { sessionClientsCopy } from './session-clients'
 
 export const deOverrides = {
+  sessionClients: sessionClientsCopy['de'],
   sharedMetrics: deSharedMetrics,
   intro: introDe,
   connectors: deConnectorCard,

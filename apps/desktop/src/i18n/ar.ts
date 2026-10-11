@@ -10,6 +10,7 @@ import { arConnectors } from './ar_connectors'
 import { arDiagnostics } from './ar_diagnostics'
 import { arSettings } from './ar_settings'
 import { defineLocale, type TranslationOverrides } from './define-locale'
+import { sessionClientsCopy } from './session-clients'
 
 export const arOverrides = {
   connectors: {
@@ -23,6 +24,7 @@ export const arOverrides = {
       signInFailed: 'تعذّر الاتصال. انقر لإعادة المحاولة'
     }
   },
+  sessionClients: sessionClientsCopy['ar'],
   sharedMetrics: arCommon.sharedMetrics,
   externalOpenFailed: arChrome.externalOpenFailed,
   sessionImport: arConnectors.sessionImport,
