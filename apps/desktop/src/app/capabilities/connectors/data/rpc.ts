@@ -138,11 +138,17 @@ export const removeConnectorAccount = (scope: ProfileScope, connectionId: string
 export const renameConnectorAccount = (scope: ProfileScope, connectionId: string, alias: string) =>
   call(scope, 'connectors.accounts.rename', { alias, connection_id: connectionId }, 'foreground')
 
+/** Which account a connect names: `alias` for a named one, `connectionId` to repair an unnamed one. */
+export interface ConnectAddress {
+  alias?: string
+  connectionId?: string
+}
+
 export function connectAccountConnectors(
   scope: ProfileScope,
   connectors: readonly string[],
   reconnect = false,
-  alias?: string
+  address: ConnectAddress = {}
 ) {
   const params: RpcMethods['connectors.connect']['params'] = {
     connectors: [...connectors],
@@ -150,8 +156,11 @@ export function connectAccountConnectors(
     reconnect
   }
 
-  if (alias) {
-    params.alias = alias
+  if (address.alias) {
+    params.alias = address.alias
+  } else if (reconnect && address.connectionId) {
+    // An unnamed account has no name to address it by; its id is the only way to repair that one.
+    params.connection_id = address.connectionId
   }
 
   return call(scope, 'connectors.connect', params, 'foreground')

@@ -252,6 +252,8 @@ export type ConnectOutcome = { error: ConnectorRpcError; ok: false } | { ok: tru
 export interface ConnectOptions {
   /** The account's name: a new account takes it; with `reconnect`, only that account is repaired. */
   alias?: string
+  /** With `reconnect`, the existing account to repair; the only address an unnamed account has. */
+  connectionId?: string
   reconnect?: boolean
 }
 
@@ -269,7 +271,10 @@ export function useConnectConnector(scope: ProfileScope): ConnectorConnect {
       setPending(slug)
 
       try {
-        const snapshot = await connectAccountConnectors(scope, [slug], options?.reconnect ?? false, options?.alias)
+        const snapshot = await connectAccountConnectors(scope, [slug], options?.reconnect ?? false, {
+          alias: options?.alias,
+          connectionId: options?.connectionId
+        })
 
         return { ok: true, operation: startAccountOperation(scope, [slug], snapshot) }
       } catch (error) {

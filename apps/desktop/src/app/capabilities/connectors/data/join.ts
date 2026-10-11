@@ -26,6 +26,8 @@ import type {
   ToolRowModel
 } from '../types'
 
+import type { ConnectAddress } from './rpc'
+
 export interface ConnectorPolicyTagRules {
   disable: readonly string[]
   enable: readonly string[]
@@ -157,6 +159,13 @@ export function accountsFor(accounts: readonly AccountRow[], slug: string): Acco
 export function retiredAccountsFor(accounts: readonly AccountRow[], slug: string): AccountRow[] {
   return accounts.filter(account => account.connector === slug && isRetired(account))
 }
+
+/**
+ * How a reconnect names the account it repairs, so the gateway mints a replacement for that one and deletes
+ * nothing: a named account goes by its name, an unnamed one by its id (it has nothing else).
+ */
+export const accountAddress = (account: AccountRow): ConnectAddress =>
+  account.alias ? { alias: account.alias } : { connectionId: account.connection_id }
 
 /** The one account the app's summary speaks for. */
 export function pickAccount(accounts: readonly AccountRow[], slug: string): AccountRow | undefined {

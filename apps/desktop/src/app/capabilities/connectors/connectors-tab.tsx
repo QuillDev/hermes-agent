@@ -15,11 +15,12 @@ import { useMcpServers } from '../mcp/use-mcp-servers'
 import { AddServerDialog } from './add-dialog'
 import { ConnectorsDirectory } from './connectors-directory'
 import { $abandonedConnects, $accountOperations, abandonConnect, accountOperationFor } from './data/account-operations'
-import { joinBundledEntries, joinLocalServers, pickAccount } from './data/join'
+import { accountAddress, joinBundledEntries, joinLocalServers, pickAccount } from './data/join'
 import { useConnectConnector, useConnectorSwitch, useDisconnectAccount, useRenameAccount } from './data/mutations'
 import { seedLocalServers, startConnectorPersistence, storeLocalServers } from './data/persist'
 import { prefetchConnectorTools, usePrefetchConnectedTools } from './data/prefetch'
 import { useHostedConnectors, usePluginServers } from './data/queries'
+import type { ConnectAddress } from './data/rpc'
 import {
   cardKey,
   deriveCards,
@@ -126,8 +127,8 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     }
   }
 
-  const connectAccount = async (card: ConnectorCardModel, reconnect: boolean, alias?: null | string) => {
-    const outcome = await connector.connect(card.slug, { alias: alias ?? undefined, reconnect })
+  const connectAccount = async (card: ConnectorCardModel, reconnect: boolean, address: ConnectAddress = {}) => {
+    const outcome = await connector.connect(card.slug, { ...address, reconnect })
 
     if (outcome.ok) {
       const url = outcome.operation.targets.find(target => target.connectUrl)?.connectUrl
@@ -140,11 +141,12 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     return outcome
   }
 
-  // A row passes its account's name, or null for an unnamed account; only an app-level reconnect (undefined)
-  // falls back to the account the summary speaks for.
-  const startConnect = async (card: ConnectorCardModel, reconnect: boolean, alias?: null | string) => {
-    const target = alias === undefined ? reconnectAlias(reconnect, hosted.accounts, card) : alias
-    const outcome = await connectAccount(card, reconnect, target)
+  // A row passes its own account, named or not. An app-level reconnect or Try again (no account) names the
+  // account the summary speaks for, or nothing, so it still matches the sign-in that is already open.
+  const startConnect = async (card: ConnectorCardModel, reconnect: boolean, account?: AccountRow) => {
+    const fallback = reconnect ? pickAccount(hosted.accounts, card.slug)?.alias : undefined
+    const address = account ? accountAddress(account) : { alias: fallback ?? undefined }
+    const outcome = await connectAccount(card, reconnect, address)
 
     if (!outcome.ok) {
       notifyError(outcome.error, t.connectors.connectErrorFor(card.name))
@@ -290,12 +292,12 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
         <HostedConnectorDialog
           accountActions={{
             add: async alias => {
-              const outcome = await connectAccount(openCard, false, alias)
+              const outcome = await connectAccount(openCard, false, { alias })
 
               return outcome.ok ? { ok: true } : outcome
             },
             pendingRename,
-            reconnect: (account: AccountRow) => void startConnect(openCard, true, account.alias ?? null),
+            reconnect: (account: AccountRow) => void startConnect(openCard, true, account),
             reconnecting: connector.pending === openCard.slug,
             remove: (account: AccountRow) => setDisconnecting({ account, card: openCard }),
             rename: renamer.rename,
@@ -342,10 +344,6 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     </div>
   )
 }
-
-// A reconnect names the account it repairs, so the gateway mints a replacement for that one and deletes nothing.
-const reconnectAlias = (reconnect: boolean, accounts: readonly AccountRow[], card: ConnectorCardModel) =>
-  reconnect ? (pickAccount(accounts, card.slug)?.alias ?? undefined) : undefined
 
 function HostedNotice({ hasGuest, phase }: { hasGuest: boolean; phase: HostedPhase }) {
   const { t } = useI18n()

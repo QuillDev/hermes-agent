@@ -4,10 +4,8 @@ export type ConnectorResidency = 'hosted' | 'local'
 
 export type LocalServerStatus = 'error' | 'needs-auth' | 'off' | 'ok' | 'probing' | 'unknown'
 
-/** The account rows a newer gateway sends; `disabled` marks an account a reconnect replaced. */
-export interface AccountRow extends ConnectorAccountRow {
-  disabled?: boolean | null
-}
+/** One hosted account; `disabled` marks an account a reconnect replaced. */
+export type AccountRow = ConnectorAccountRow
 
 export interface HostedConnectorInput {
   accountLabel?: string
