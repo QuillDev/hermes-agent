@@ -271,12 +271,14 @@ export function useConnectConnector(scope: ProfileScope): ConnectorConnect {
       setPending(slug)
 
       try {
-        const snapshot = await connectAccountConnectors(scope, [slug], options?.reconnect ?? false, {
+        const request = {
           alias: options?.alias,
-          connectionId: options?.connectionId
-        })
+          connectionId: options?.connectionId,
+          reconnect: options?.reconnect ?? false
+        }
+        const snapshot = await connectAccountConnectors(scope, [slug], request.reconnect, request)
 
-        return { ok: true, operation: startAccountOperation(scope, [slug], snapshot) }
+        return { ok: true, operation: startAccountOperation(scope, [slug], snapshot, request) }
       } catch (error) {
         return { error: asConnectorError(error), ok: false }
       } finally {

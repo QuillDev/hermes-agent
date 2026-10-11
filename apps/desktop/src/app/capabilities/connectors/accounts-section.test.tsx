@@ -11,7 +11,7 @@ import { setPrimaryGateway } from '@/store/gateway'
 
 import { type AccountEdit, AccountsSection } from './accounts-section'
 import { connectorsAccountsQueryKey } from './data/keys'
-import { useRenameAccount } from './data/mutations'
+import { useRenameAccount, type WriteOutcome } from './data/mutations'
 
 const SCOPE = 'default'
 
@@ -40,7 +40,15 @@ const ACCOUNTS: ConnectorAccountsResult = {
   ]
 }
 
-function Harness() {
+function Harness({
+  connecting = false,
+  onAdd = async () => ({ ok: true }),
+  retryable = null
+}: {
+  connecting?: boolean
+  onAdd?: (alias: string) => Promise<WriteOutcome>
+  retryable?: null | string
+}) {
   // A refetch never answers, so only the rename's own reconcile or rollback can change the row.
   const accounts = useQuery({
     queryFn: () => new Promise<ConnectorAccountsResult>(() => undefined),
@@ -54,26 +62,27 @@ function Harness() {
   return (
     <AccountsSection
       accounts={accounts.data?.accounts ?? []}
-      connecting={false}
+      connecting={connecting}
       edit={edit}
-      onAdd={async () => ({ ok: true })}
+      onAdd={onAdd}
       onEditChange={setEdit}
       onReconnect={() => undefined}
       onRemove={() => undefined}
       onRename={renamer.rename}
       reconnecting={false}
       retired={[]}
+      retryable={retryable}
     />
   )
 }
 
-function renderSection() {
-  queryClient.setQueryData(connectorsAccountsQueryKey(SCOPE), ACCOUNTS)
+function renderSection(props: Parameters<typeof Harness>[0] = {}, accounts: ConnectorAccountsResult = ACCOUNTS) {
+  queryClient.setQueryData(connectorsAccountsQueryKey(SCOPE), accounts)
 
   return render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <Harness />
+        <Harness {...props} />
       </I18nProvider>
     </QueryClientProvider>
   )
@@ -191,3 +200,41 @@ describe('AccountsSection rename', () => {
     expect(renameCalls(request)).toEqual([])
   })
 })
+
+describe('AccountsSection add', () => {
+  it('shows why the gateway refused a typed name until the user changes it', async () => {
+    renderSection({
+      onAdd: async () => ({
+        error: { message: 'Sign-in could not start.', reason: 'CONNECTOR_REQUEST_FAILED' } as never,
+        ok: false
+      })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add another account' }))
+    const field = screen.getByRole('textbox', { name: copyLabel() })
+    fireEvent.change(field, { target: { value: 'desk' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())
+
+    fireEvent.change(screen.getByRole('textbox', { name: copyLabel() }), { target: { value: 'desk2' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('AccountsSection reconnect while a sign-in is open', () => {
+  const broken: ConnectorAccountsResult = {
+    accounts: ACCOUNTS.accounts.map(row => ({ ...row, active: false, status: 'expired' as const }))
+  }
+
+  it('lets the failed account retry and keeps every other account blocked', () => {
+    renderSection({ connecting: true, retryable: 'ca_work' }, broken)
+
+    const [work, home] = screen.getAllByRole('button', { name: 'Reconnect' }) as HTMLButtonElement[]
+
+    expect(work.disabled).toBe(false)
+    expect(home.disabled).toBe(true)
+  })
+})
+
+const copyLabel = () => 'Account name'

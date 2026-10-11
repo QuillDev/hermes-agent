@@ -8,10 +8,12 @@ import { type AccountOperation, syncAccountOperation } from './data/account-oper
 
 export interface ConnectElementProps {
   operation: AccountOperation
+  /** Restarts the failed sign-in of the account the operation is for; absent while one is still waiting. */
+  onRetry?: () => void
   onStopWaiting: () => void
 }
 
-export function ConnectElement({ operation, onStopWaiting }: ConnectElementProps) {
+export function ConnectElement({ operation, onRetry, onStopWaiting }: ConnectElementProps) {
   const { t } = useI18n()
   const copy = t.connectorsPage
   const link = operation.targets.find(target => target.connectUrl)?.connectUrl ?? null
@@ -37,6 +39,12 @@ export function ConnectElement({ operation, onStopWaiting }: ConnectElementProps
         {link ? (
           <Button onClick={() => void window.hermesDesktop?.openExternal?.(link)} size="xs" variant="secondary">
             {copy.dialog.connectOpenAgain}
+          </Button>
+        ) : null}
+
+        {onRetry ? (
+          <Button onClick={onRetry} size="xs" variant="secondary">
+            {copy.card.verb.tryAgain}
           </Button>
         ) : null}
 

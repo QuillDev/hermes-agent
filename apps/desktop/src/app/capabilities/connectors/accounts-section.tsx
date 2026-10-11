@@ -47,6 +47,8 @@ export interface AccountsSectionProps {
   onRename: (connectionId: string, alias: string) => Promise<WriteOutcome>
   reconnecting: boolean
   retired: readonly AccountRow[]
+  /** The account whose failed sign-in the open operation may retry while `connecting` blocks the others. */
+  retryable?: null | string
 }
 
 export function AccountsSection({
@@ -59,7 +61,8 @@ export function AccountsSection({
   onRemove,
   onRename,
   reconnecting,
-  retired
+  retired,
+  retryable = null
 }: AccountsSectionProps) {
   const { t } = useI18n()
   const copy = t.connectorsPage.accounts
@@ -114,6 +117,7 @@ export function AccountsSection({
             label={copy.renameLabel(accountName(account))}
             onCancel={() => onEditChange(null)}
             onSubmit={alias => void rename(account.connection_id, alias)}
+            refusedValue={edit.draft}
             self={account.connection_id}
             submitLabel={t.common.save}
             unchanged={account.alias ?? ''}
@@ -125,7 +129,7 @@ export function AccountsSection({
               <>
                 {account.status !== 'active' && STATUS_VIEW[account.status].reconnect ? (
                   <Button
-                    disabled={reconnecting || connecting}
+                    disabled={reconnecting || (connecting && account.connection_id !== retryable)}
                     onClick={() => onReconnect(account)}
                     size="xs"
                     variant="secondary"
@@ -163,6 +167,7 @@ export function AccountsSection({
           label={copy.aliasLabel}
           onCancel={() => onEditChange(null)}
           onSubmit={alias => void add(alias)}
+          refusedValue={edit.draft}
           submitLabel={copy.add}
         />
       ) : accounts.length > 0 ? (
@@ -246,6 +251,8 @@ interface AliasEditorProps {
   label: string
   onCancel: () => void
   onSubmit: (alias: string) => void
+  /** The value `error` refused; the error shows while the field still holds it. */
+  refusedValue?: string
   self?: string
   submitLabel: string
   /** Submitting this value closes the editor without a write. */
@@ -261,6 +268,7 @@ function AliasEditor({
   label,
   onCancel,
   onSubmit,
+  refusedValue,
   self,
   submitLabel,
   unchanged
@@ -269,8 +277,7 @@ function AliasEditor({
   const copy = t.connectorsPage.accounts
   const [value, setValue] = useState(initial)
   const [invalid, setInvalid] = useState<null | string>(null)
-  const [edited, setEdited] = useState(false)
-  const error = invalid ?? (edited ? undefined : refused)
+  const error = invalid ?? (refusedValue !== undefined && value.trim() === refusedValue ? refused : undefined)
 
   const submit = () => {
     const alias = value.trim()
@@ -310,7 +317,6 @@ function AliasEditor({
           onChange={event => {
             setValue(event.target.value.toLowerCase())
             setInvalid(null)
-            setEdited(true)
           }}
           placeholder={label}
           size="sm"

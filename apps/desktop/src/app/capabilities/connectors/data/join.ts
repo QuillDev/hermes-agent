@@ -162,10 +162,10 @@ export function retiredAccountsFor(accounts: readonly AccountRow[], slug: string
 
 /**
  * How a reconnect names the account it repairs, so the gateway mints a replacement for that one and deletes
- * nothing: a named account goes by its name, an unnamed one by its id (it has nothing else).
+ * nothing: always its id. The name can be an optimistic rename the server has not confirmed, and another
+ * session may hold that name, so it never addresses a repair.
  */
-export const accountAddress = (account: AccountRow): ConnectAddress =>
-  account.alias ? { alias: account.alias } : { connectionId: account.connection_id }
+export const accountAddress = (account: AccountRow): ConnectAddress => ({ connectionId: account.connection_id })
 
 /** The one account the app's summary speaks for. */
 export function pickAccount(accounts: readonly AccountRow[], slug: string): AccountRow | undefined {

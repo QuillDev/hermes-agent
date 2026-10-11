@@ -35,8 +35,8 @@ function serveConnect() {
 afterEach(() => setPrimaryGateway(null))
 
 describe('reconnect addresses the account the user picked', () => {
-  it('names a named account by its name', () => {
-    expect(accountAddress(account({ alias: 'work', connection_id: 'ca_work' }))).toEqual({ alias: 'work' })
+  it('names a named account by its id, so an unconfirmed rename cannot point the repair at another account', () => {
+    expect(accountAddress(account({ alias: 'office', connection_id: 'ca_work' }))).toEqual({ connectionId: 'ca_work' })
   })
 
   it('names an unnamed account by its id, the only address it has', () => {

@@ -13,7 +13,9 @@ import {
   $accountOperations,
   type AccountOperation,
   accountOperationFor,
-  clearAccountOperation
+  clearAccountOperation,
+  retryable,
+  retryableAccount
 } from './data/account-operations'
 import type { WriteOutcome } from './data/mutations'
 import { openConnectorsAdmin } from './data/portal'
@@ -58,6 +60,8 @@ export interface HostedAccountActions {
   pendingRename: null | PendingRename
   reconnect: (account: AccountRow) => void
   reconnecting: boolean
+  /** Sends a failed operation's own request again, so the backend mints a fresh link on that operation. */
+  retry: (operation: AccountOperation) => void
   remove: (account: AccountRow) => void
   rename: (connectionId: string, alias: string) => Promise<WriteOutcome>
   renameOpened: () => void
@@ -94,7 +98,13 @@ export function HostedConnectorDialog({
   }, [inUse])
 
   const accounts = card.ways.hosted?.accounts ?? []
-  const accountList = useAccountList(card, accountActions, operation !== null && !operation.settled)
+
+  const accountList = useAccountList(
+    card,
+    accountActions,
+    operation !== null && !operation.settled,
+    retryableAccount(operation)
+  )
 
   const local = card.ways.local
   const serverName = localServerName(card)
@@ -116,7 +126,11 @@ export function HostedConnectorDialog({
   )
 
   const element = stillOpen(operation) ? (
-    <ConnectElement onStopWaiting={() => onGiveUp(operation.opId)} operation={operation} />
+    <ConnectElement
+      onRetry={retryable(operation) ? () => accountActions.retry(operation) : undefined}
+      onStopWaiting={() => onGiveUp(operation.opId)}
+      operation={operation}
+    />
   ) : undefined
 
   return (
@@ -194,7 +208,12 @@ function menuReconnect(
 
 /** The account list's props and its one piece of local state: which name is being edited. A deep link's pending
  *  rename opens that account's editor once this app lists it. */
-function useAccountList(card: ConnectorCardModel, actions: HostedAccountActions, connecting: boolean) {
+function useAccountList(
+  card: ConnectorCardModel,
+  actions: HostedAccountActions,
+  connecting: boolean,
+  retryable: null | string
+) {
   const [edit, setEdit] = useState<AccountEdit | null>(null)
   const accounts = card.ways.hosted?.accounts ?? []
   const { pendingRename, renameOpened } = actions
@@ -219,7 +238,8 @@ function useAccountList(card: ConnectorCardModel, actions: HostedAccountActions,
     onRemove: actions.remove,
     onRename: actions.rename,
     reconnecting: actions.reconnecting,
-    retired: card.ways.hosted?.retiredAccounts ?? []
+    retired: card.ways.hosted?.retiredAccounts ?? [],
+    retryable
   }
 
   // Escape cancels an open name edit and reports it, so the dialog stays open.

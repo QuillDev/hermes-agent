@@ -141,11 +141,11 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
     return outcome
   }
 
-  // A row passes its own account, named or not. An app-level reconnect or Try again (no account) names the
-  // account the summary speaks for, or nothing, so it still matches the sign-in that is already open.
+  // A row passes its own account. An app-level reconnect or Try again (no account) names the account the
+  // summary speaks for, or nothing; either goes by id, so it still matches the sign-in that is already open.
   const startConnect = async (card: ConnectorCardModel, reconnect: boolean, account?: AccountRow) => {
-    const fallback = reconnect ? pickAccount(hosted.accounts, card.slug)?.alias : undefined
-    const address = account ? accountAddress(account) : { alias: fallback ?? undefined }
+    const target = account ?? (reconnect ? pickAccount(hosted.accounts, card.slug) : undefined)
+    const address = target ? accountAddress(target) : {}
     const outcome = await connectAccount(card, reconnect, address)
 
     if (!outcome.ok) {
@@ -299,6 +299,15 @@ export function ConnectorsTab({ gateway, profile }: ConnectorsTabProps) {
             pendingRename,
             reconnect: (account: AccountRow) => void startConnect(openCard, true, account),
             reconnecting: connector.pending === openCard.slug,
+            retry: operation => {
+              const { reconnect, ...address } = operation.request
+
+              void connectAccount(openCard, reconnect, address).then(outcome => {
+                if (!outcome.ok) {
+                  notifyError(outcome.error, t.connectors.connectErrorFor(openCard.name))
+                }
+              })
+            },
             remove: (account: AccountRow) => setDisconnecting({ account, card: openCard }),
             rename: renamer.rename,
             renameOpened

@@ -14,10 +14,18 @@ import { normalizeProfileKey } from '@/store/profile'
 import { invalidateConnectors } from './keys'
 import { accountOperationStatus } from './rpc'
 
+/** What started an operation, so a retry sends the same request and the backend reuses that operation. */
+export interface AccountOperationRequest {
+  alias?: string
+  connectionId?: string
+  reconnect: boolean
+}
+
 export interface AccountOperation {
   connectors: string[]
   deadlineAt: number
   opId: string
+  request: AccountOperationRequest
   scope: ProfileScope
   seq: number
   settled: boolean
@@ -73,15 +81,33 @@ export function accountOperationFor(
   return mine.find(operation => !operation.settled) ?? mine[mine.length - 1] ?? null
 }
 
+const RETRYABLE: readonly ConnectionTarget['state'][] = ['failed', 'expired']
+
+/**
+ * An open operation whose every target failed or expired: nothing waits on a browser, and the backend keeps it
+ * open so the same request can mint a fresh link. Only that request may run again; another account may not start.
+ */
+export const retryable = (operation: AccountOperation | null): operation is AccountOperation =>
+  operation !== null &&
+  !operation.settled &&
+  operation.targets.length > 0 &&
+  operation.targets.every(target => RETRYABLE.includes(target.state))
+
+/** The account a retryable operation repairs, by the id its request named; null for an add or an app-level start. */
+export const retryableAccount = (operation: AccountOperation | null): null | string =>
+  retryable(operation) ? (operation.request.connectionId ?? null) : null
+
 export function startAccountOperation(
   scope: ProfileScope,
   connectors: readonly string[],
-  snapshot: ConnectorsConnectResult
+  snapshot: ConnectorsConnectResult,
+  request: AccountOperationRequest = { reconnect: false }
 ): AccountOperation {
   const operation: AccountOperation = {
     connectors: [...connectors],
     deadlineAt: snapshot.deadline_at,
     opId: snapshot.op_id,
+    request,
     scope,
     seq: snapshot.seq,
     settled: snapshot.settled,
