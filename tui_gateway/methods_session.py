@@ -361,6 +361,9 @@ def _create_session(rid, params: dict, *, copy_parent_history: bool = False) -> 
                 existing_sid, _ = existing
                 session = _sessions.get(existing_sid)
                 if session is not None:
+                    from gateway.session_forum_sync import record_native_creation
+                    record_native_creation(session.get('profile_home') or _hermes_home, session['session_key'],
+                                           eligible=False, idempotency_key=idem_key, fresh=False)
                     # Refresh the TTL so back-to-back retries don't age out mid-flight.
                     _idempotency_keys[idem_key] = (existing_sid, now_for_gc)
                     history = session["history"]
@@ -441,6 +444,10 @@ def _create_session(rid, params: dict, *, copy_parent_history: bool = False) -> 
             "slash_worker": None, "tool_progress_mode": _load_tool_progress_mode(), "tool_started_at": {},
             "transport": current_transport() or _stdio_transport,
             "auth_user_id": _transport_auth_user_id(current_transport())}
+        from gateway.session_forum_sync import record_native_creation
+        record_native_creation(profile_home or _hermes_home, key,
+                               eligible=source == 'desktop' and not parent_session_id and not history and not _flag(params, 'room_plumbing'),
+                               idempotency_key=idem_key)
         _register_session_cwd(_sessions[sid])
         if idem_key is not None:
             _idempotency_keys[idem_key] = (sid, now)
@@ -450,24 +457,14 @@ def _create_session(rid, params: dict, *, copy_parent_history: bool = False) -> 
         logger.info("session.create %s: model=%s provider=%s source=client override (profile default: %s)",
                     key, session_model_override["model"], session_model_override.get("provider") or "-",
                     _session_default_route(_sessions[sid])[0])
-    # No DB row here (drafts left "Untitled" litter): created on the first prompt — except seeded sessions.
-    # NOTE: we intentionally do NOT persist a DB row here. Every TUI/desktop launch (and every "New agent" /
-    # draft) opens a session here just to paint the composer, so eagerly creating a row left an "Untitled"
-    # empty session behind for every launch the user never typed into. The row is now created lazily on the
-    # first prompt (see _ensure_session_db_row + prompt.submit), and the AIAgent's own INSERT-OR-IGNORE
-    # persists it on the first turn too. EXCEPTION — seeded branch children (#93959): a desktop branch
-    # carries parent_session_id AND a seeded transcript, which is explicit user intent, not an abandoned
-    # draft. The row MUST exist immediately: the renderer's post-create resume re-fetches the child through
-    # REST + defer_history hydration, both of which read the DB — an unpersisted child 404s, the fail-latch
-    # then refuses to bind a "transcript-less" session, and the user sees an infinite spinner whose
-    # optimistic row vanishes on restart. Persisting up front also means a restart keeps the branch (both
-    # reports lost it) and the title lands in the parent's lineage instead of falling back to a
-    # message-preview name. Title mirrors the TUI /branch naming.
-    # The same holds for a seeded session WITHOUT a parent (a client opening a chat with its first turns
-    # already written): the transcript exists only in memory, so a restart before the first prompt lost it
-    # and the post-create resume 404'd. Persist it up front too; only empty drafts stay lazy.
+    # Empty drafts stay lazy. Seeded sessions persist now: Desktop's post-create
+    # hydration reads state.db, and a missing row loses the imported transcript.
+    # Remote project drafts also preserve cwd before the gateway admits a turn.
     if parent_session_id and history:
         _seed_branch_row(_sessions[sid], key, parent_session_id, history, source, profile_home)
+    elif parent_session_id:
+        # Freeze empty branch lineage before the background agent can insert a root row.
+        _ensure_session_db_row(_sessions[sid])
     elif history:
         _seed_row(_sessions[sid])
     elif explicit_cwd and remote_cwd:

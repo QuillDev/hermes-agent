@@ -17,18 +17,24 @@ import sys
 import threading
 import time
 
-HOST_KEY = '__hermes_session_execution_host__'
+LEGACY_HOST_KEY = '__hermes_session_execution_host__'
+# Fixed protocol generation, not a source hash: at most these two namespaces.
+HOST_KEY = '__hermes_session_execution_host_v2__'
+HOST_KEYS = (LEGACY_HOST_KEY, HOST_KEY)
+CREATE_KEY_PREFIX = 'hermes-host-v2:'
 _launch_lock = threading.RLock()
 
 
-def ensure_host(home: Path | str):
+def ensure_host(home: Path | str, *, service_key: str = HOST_KEY):
     from tools.environments.local import served_profile_child_env
     from tui_gateway.session_clients import _owner_alive, get_hub
 
+    if service_key not in HOST_KEYS:
+        raise ValueError('Unsupported execution-host generation')
     home = Path(home).resolve()
     hub = get_hub(home)
     with _launch_lock:
-        record = hub.lookup(HOST_KEY)
+        record = hub.lookup(service_key)
         if record and _owner_alive(record):
             return record
         env = served_profile_child_env(target_home=home, inherit_credentials=True)
@@ -39,12 +45,12 @@ def ensure_host(home: Path | str):
         fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, 'ab') as output:
             process = subprocess.Popen(
-                [sys.executable, '-m', 'tui_gateway.session_client_host'],
+                [sys.executable, '-m', 'tui_gateway.session_client_host', '--service-key', service_key],
                 cwd=Path(__file__).resolve().parent.parent, env=env,
                 stdin=subprocess.DEVNULL, stdout=output, stderr=output, **options)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
-            record = hub.lookup(HOST_KEY)
+            record = hub.lookup(service_key)
             if record and _owner_alive(record):
                 return record
             if process.poll() is not None:
@@ -53,11 +59,63 @@ def ensure_host(home: Path | str):
         raise RuntimeError(f'Execution host did not become ready; inspect {log_path}')
 
 
+def new_create_key() -> str:
+    """Client opt-in for a NEW logical create; retain the exact token on every retry.
+
+    Never wrap an existing token or add this marker server-side on a retry. The
+    reserved prefix selects the v2 admission protocol; it is not a credential.
+    Ordinary Desktop creates without a key already select the updated host.
+    """
+    import secrets
+    return CREATE_KEY_PREFIX + secrets.token_urlsafe(24)
+
+
+def _keyed_host(hub, token: str) -> dict:
+    """Persist selection BEFORE admission; a later legacy boot cannot change it."""
+    import hashlib
+    from tui_gateway.session_clients import _owner_alive
+    identity = hashlib.sha256(token.encode()).hexdigest()
+    with hub._db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        route = db.execute('SELECT * FROM create_routes WHERE identity=?', (identity,)).fetchone()
+        if route is None:
+            legacy = db.execute('SELECT * FROM owners WHERE session_key=?', (LEGACY_HOST_KEY,)).fetchone()
+            old = legacy is not None and not token.startswith(CREATE_KEY_PREFIX)
+            db.execute('INSERT INTO create_routes VALUES (?,?,?)',
+                       (identity, LEGACY_HOST_KEY if old else HOST_KEY, legacy['owner'] if old else None))
+            route = db.execute('SELECT * FROM create_routes WHERE identity=?', (identity,)).fetchone()
+        service_key, owner = route['service_key'], route['owner']
+    if owner is None:
+        # No command can be sent until the winning launch's owner is durably bound.
+        host = ensure_host(hub.home, service_key=service_key)
+        with hub._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('UPDATE create_routes SET owner=? WHERE identity=? AND owner IS NULL',
+                       (host['owner'], identity))
+            owner = db.execute('SELECT owner FROM create_routes WHERE identity=?', (identity,)).fetchone()['owner']
+    host = hub.lookup(service_key)
+    if not host or host['owner'] != owner or not host['online'] or not _owner_alive(host):
+        raise RuntimeError('Create admission owner is unavailable or changed; no replacement create was started')
+    return host
+
+
 def create_on_host(home: Path | str, params: dict | None = None, *, method='session.create') -> dict:
     from tui_gateway.session_clients import get_hub
 
-    host = ensure_host(home)
-    return get_hub(home).call(HOST_KEY, method, {'source': 'desktop', **(params or {})}, expected_owner=host['owner'])
+    params = {'source': 'desktop', **(params or {})}
+    token = params.get('idempotency_key')
+    keyed_method = method in {'session.create', 'session.branch_stored'}
+    if keyed_method and token is not None:
+        # Native admission strips keys. Reject padding, never hash one identity
+        # and admit another; absent/null alone retain unkeyed semantics.
+        if not isinstance(token, str) or not token or token != token.strip():
+            from tui_gateway import server
+            return server._err(None, -32602, 'invalid params: idempotency_key must be a '
+                               'non-empty string without leading or trailing whitespace')
+    hub = get_hub(home)
+    host = (_keyed_host(hub, token) if token is not None and keyed_method
+            else ensure_host(home))
+    return hub.call(host['session_key'], method, params, expected_owner=host['owner'])
 
 
 def _stored_gateway_history(home, key):
@@ -149,6 +207,10 @@ def route_hosted_session(method: str, params: dict, rid):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--service-key', choices=HOST_KEYS, default=HOST_KEY)
+    args = parser.parse_args()
     from hermes_constants import get_hermes_home
     from tui_gateway.session_clients import get_hub
 
@@ -156,7 +218,7 @@ def main():
     # Claim before accepting any work. Concurrent launchers can start processes,
     # but only the generation-fenced winner can create an agent.
     try:
-        hub = get_hub(home, execution_host=True, start=False)
+        hub = get_hub(home, execution_host=True, start=False, service_key=args.service_key)
     except RuntimeError:
         return
     from tui_gateway import server

@@ -3,8 +3,6 @@
 Pure-data leaf module — must not import from hermes_cli.config. Comments are the user-facing
 docs of config.yaml.
 """
-
-
 #: Image every container terminal backend (docker/modal/daytona/singularity) uses unless the
 #: user pins one. LEGACY_SANDBOX_IMAGES are the plain defaults that preceded the desktop stack
 #: (the 3.14 pin shipped between the two without a migration); a saved config still holding one
@@ -30,7 +28,9 @@ def _aux(timeout, *, reasoning_effort=True, **extra):
     return d
 
 
-DEFAULT_CONFIG = {"session_clients": {"enabled": False},  # Explicit invitations only; no automatic private mirroring.
+DEFAULT_CONFIG = {"session_clients": {"enabled": False, "discord_forum": {
+        "automatic": False, "activation_id": "", "guild_id": "", "forum_id": "",
+        "forum_name": "hermes-sessions"}},  # Profile-local explicit opt-in; never auto-publish existing histories.
     "model": "",
     "providers": {},
     "fallback_providers": [],

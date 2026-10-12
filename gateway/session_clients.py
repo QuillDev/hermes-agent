@@ -29,7 +29,7 @@ def _cursor(home, session_key, chat_id, seq=None):
 def _rpc(hub, link, method, **params):
     origin = params.pop("origin", None) or (f"discord:{link['chat_id']}" if link.get('chat_id') else None)
     response = hub.call(link["session_key"], method, {"session_id": link["sid"], **params},
-                        origin=origin, expected_owner=link.get('owner'))
+                        origin=origin, expected_owner=link.get('owner'), automatic_forum=link.get('_automatic_forum'))
     if response.get("error"):
         raise RuntimeError(response["error"].get("message", "Shared session request failed"))
     return response.get("result", {})
@@ -74,8 +74,7 @@ async def _bind(runner, event, hub, home, command):
     return f"Shared session connected: <#{chat_id}>" if thread else "Shared session connected in this chat."
 
 
-async def _submit(event, hub, link):
-    command = event.get_command()
+async def _submit(event, hub, link, command=None):
     if command in {"share", "attach"}:
         return f"This thread is already attached to shared session: {link['sid']}"
     if command == "stop":
@@ -174,11 +173,29 @@ async def handle_session_client_message(runner, event) -> tuple[bool, str | None
             return (True, "Shared clients are disabled; no replacement run was started.") if link else (False, None)
         if _is_bot(event):
             return True, None
+        if link:
+            from gateway.session_forum_sync import automatic_destination, automatic_intake_allowed
+            destination = await asyncio.to_thread(automatic_destination, home, event.source.chat_id)
+            if destination and not await automatic_intake_allowed(runner, event.source, home, destination):
+                return True, 'Automatic forum destination is unavailable or belongs to another receiving bot/guild; no replacement run was started.'
+            if destination:
+                link['_automatic_forum'] = {'scope': destination['scope'], 'chat_id': str(event.source.chat_id)}
         if link and str(event.source.user_id) != str(link["user_id"]):
             return True, "This shared session belongs to another Discord user."
         try:
+            if command:
+                from hermes_cli.commands import resolve_command
+                definition = resolve_command(command)
+                canonical = definition.name if definition else command
+                if definition or command in {'attach', 'share'}:
+                    denial = runner._check_slash_access(event.source, canonical)
+                    if denial is not None:
+                        return True, denial
+                if canonical not in {'stop', 'steer', 'status', 'share', 'attach'}:
+                    return True, 'This command is not supported by shared session clients.'
+                command = canonical
             if link:
-                return True, await _submit(event, hub, link)
+                return True, await _submit(event, hub, link, command)
             return True, await _bind(runner, event, hub, home, command)
         except (RuntimeError, ValueError, TimeoutError, OSError) as exc:
             logger.warning("Shared session request failed: %s", exc)
@@ -232,30 +249,47 @@ async def _send_attachment(adapter, chat_id, attachment):
         raise RuntimeError("Shared session attachment delivery failed")
 
 
-async def _send_frame(adapter, chat_id, frame, last_progress):
+async def _send_frame(adapter, chat_id, frame, last_progress, authorize=None):
+    from contextlib import nullcontext
+    context = adapter.automatic_forum_delivery(authorize) if authorize else nullcontext()
+    with context:
+        return await _deliver_frame(adapter, chat_id, frame, last_progress, authorize)
+
+
+async def _deliver_frame(adapter, chat_id, frame, last_progress, authorize=None):
     event, data, text = _event_content(frame, chat_id)
     progress = event in {"message.interim", "tool.start"}
     if progress and time.monotonic() - last_progress < 3:
         return last_progress
     text, attachments = _outbound_media(text, data)
     if text:
+        if authorize:
+            authorize()
         result = await adapter.send(chat_id, text, metadata={"_interim_send": True} if progress else None)
         if not result.success:
             raise RuntimeError("Shared session message delivery failed")
         if progress:
             last_progress = time.monotonic()
     for attachment in attachments:
+        if authorize:
+            authorize()
         await _send_attachment(adapter, chat_id, attachment)
     return last_progress
 
 
-async def _poll_link(hub, home, adapter, link, progress):
+async def _poll_link(hub, home, adapter, link, progress, destination=None):
     key, chat_id = link["session_key"], str(link["chat_id"])
     after = await asyncio.to_thread(_cursor, home, key, chat_id)
     frames = await asyncio.to_thread(hub.events, key, after)
+    from gateway.session_forum_sync import require_automatic_scope
+    authorize = (lambda: require_automatic_scope(home, destination['scope'], key=key, chat_id=chat_id)) if destination else None
     for row in frames:
+        if authorize:
+            authorize()
         slot = (str(home), key, chat_id)
-        progress[slot] = await _send_frame(adapter, chat_id, row["frame"], progress.get(slot, 0))
+        progress[slot] = await _send_frame(adapter, chat_id, row["frame"], progress.get(slot, 0), authorize)
+        if authorize:
+            authorize()
         await asyncio.to_thread(_cursor, home, key, chat_id, row["seq"])
 
 
@@ -269,14 +303,22 @@ async def poll_session_clients(runner, home, profile, progress):
         return
     from gateway.run import _profile_runtime_scope
     with _profile_runtime_scope(home):
-        hub = await asyncio.to_thread(get_hub, home)
-        links = await asyncio.to_thread(hub.links, "discord")
-        for link in links:
-            try:
-                await _poll_link(hub, home, adapter, link, progress)
-            except Exception:
-                # A deleted or inaccessible thread must not starve the profile's other clients.
-                logger.exception("Shared session delivery failed for Discord chat %s", link["chat_id"])
+        from gateway.session_forum_sync import automatic_destination, forum_poll_scope, prepare_automatic_forums
+        async with forum_poll_scope(home) as claimed:
+            if not claimed:
+                return
+            hub = await asyncio.to_thread(get_hub, home)
+            ready = await prepare_automatic_forums(hub, home, adapter)
+            links = await asyncio.to_thread(hub.links, "discord")
+            for link in links:
+                destination = await asyncio.to_thread(automatic_destination, home, link['chat_id'])
+                if destination and link['chat_id'] not in ready:
+                    continue
+                try:
+                    await _poll_link(hub, home, adapter, link, progress, destination)
+                except Exception:
+                    # A deleted or inaccessible thread must not starve other clients.
+                    logger.exception("Shared session delivery failed for Discord chat %s", link["chat_id"])
 
 
 

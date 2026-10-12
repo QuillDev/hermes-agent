@@ -9,6 +9,7 @@ from gateway.config import Platform
 from gateway.platforms.base import SendResult
 from gateway.platforms.event import MessageEvent
 from gateway.run_inbound import GatewayInboundMixin
+from gateway.run_busy import GatewayBusySessionMixin
 from gateway.session import SessionSource
 from gateway.session_clients import _cursor, _send_frame
 
@@ -44,6 +45,8 @@ def frame(event, **payload):
 @pytest.mark.asyncio
 async def test_final_media_delivery_and_cursor_survive_restart(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr("gateway.platforms.base._HERMES_ROOT", tmp_path)
+    monkeypatch.setattr("gateway.platforms.base.MEDIA_DELIVERY_SAFE_ROOTS", (tmp_path / 'cache',))
     from gateway.run import _profile_runtime_scope
     adapter = DiscordTransport()
     report = tmp_path / "report.txt"
@@ -102,6 +105,7 @@ async def test_real_hub_replay_and_inbound_identity_are_thread_scoped(tmp_path, 
     adapter = DiscordTransport()
     runner = SimpleNamespace(
         _resolve_profile_home_for_source=lambda source: home,
+        _check_slash_access=lambda source, cmd: GatewayBusySessionMixin._check_slash_access(runner, source, cmd),
         _adapters_for_profile=lambda profile: {Platform.DISCORD: adapter} if profile == "secondary" else {},
     )
     try:
@@ -150,6 +154,7 @@ async def test_attach_consumes_invite_for_fresh_thread_only(tmp_path, monkeypatc
     adapter.create_handoff_thread = create_thread
     monkeypatch.setattr(session_clients, "get_hub", lambda _home: hub)
     runner = SimpleNamespace(_resolve_profile_home_for_source=lambda source: tmp_path,
+                             _check_slash_access=lambda source, cmd: GatewayBusySessionMixin._check_slash_access(runner, source, cmd),
                              _delivery_adapter_for=lambda source: adapter)
     event = MessageEvent(text=f"/attach {invite['token']}", source=SessionSource(
         platform=Platform.DISCORD, chat_id=surface, user_id="owner",

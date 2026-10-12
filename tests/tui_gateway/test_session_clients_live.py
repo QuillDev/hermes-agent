@@ -26,11 +26,13 @@ def _owner_process(home, ready, stop, surface):
             from gateway.platforms.event import MessageEvent
             from gateway.session import SessionSource
             from gateway.session_clients import handle_session_client_message
+            from gateway.run_busy import GatewayBusySessionMixin
             adapter = DiscordTransport()
             async def create_thread(parent, title):
                 return 'creator-thread'
             adapter.create_handoff_thread = create_thread
             runner = SimpleNamespace(_resolve_profile_home_for_source=lambda source: Path(home),
+                                     _check_slash_access=lambda source, cmd: GatewayBusySessionMixin._check_slash_access(runner, source, cmd),
                                      _delivery_adapter_for=lambda source: adapter)
             event = MessageEvent(text='/share', source=SessionSource(
                 platform=Platform.DISCORD, chat_id='parent', user_id='owner'))
@@ -132,8 +134,10 @@ async def test_desktop_discord_share_live_execution_across_processes(tmp_path, m
             async def create_thread(parent, title):
                 return 'linked-thread'
             adapter.create_handoff_thread = create_thread
+            from gateway.run_busy import GatewayBusySessionMixin
             runner = SimpleNamespace(
                 _resolve_profile_home_for_source=lambda source: home,
+                _check_slash_access=lambda source, cmd: GatewayBusySessionMixin._check_slash_access(runner, source, cmd),
                 _delivery_adapter_for=lambda source: adapter,
                 _adapters_for_profile=lambda profile: {Platform.DISCORD: adapter})
             source = SessionSource(platform=Platform.DISCORD, chat_id='parent', user_id='owner')

@@ -73,20 +73,23 @@ def enabled(home: Path | str) -> bool:
         return False
 
 
-def get_hub(home: Path | str, *, execution_host: bool = False, start: bool = True) -> SessionClientHub:
+def get_hub(home: Path | str, *, execution_host: bool = False, start: bool = True,
+            service_key: str | None = None) -> SessionClientHub:
     key = str(Path(home).resolve())
     with _hubs_lock:
         hub = _hubs.get(key)
         if hub is None or hub._stop.is_set():
-            hub = _hubs[key] = SessionClientHub(key, execution_host=execution_host, start=start)
+            hub = _hubs[key] = SessionClientHub(key, execution_host=execution_host, start=start, service_key=service_key)
         if execution_host and not hub.execution_host:
             raise RuntimeError('A viewing client cannot become an execution host')
+        if service_key is not None and service_key != hub.service_key:
+            raise RuntimeError('An existing Hub cannot change execution-host generation')
         return hub
 
 
 def _owner_alive(row: dict) -> bool:
-    from tui_gateway.session_client_host import HOST_KEY
-    if not row['online'] and row['session_key'] != HOST_KEY:
+    from tui_gateway.session_client_host import HOST_KEYS
+    if not row['online'] and row['session_key'] not in HOST_KEYS:
         return False
     try:
         process = psutil.Process(row['pid'])
@@ -142,7 +145,12 @@ class MailboxTransport:
 
 
 class SessionClientHub:
-    def __init__(self, home: Path | str, *, start: bool = True, execution_host: bool = False):
+    def __init__(self, home: Path | str, *, start: bool = True, execution_host: bool = False,
+                 service_key: str | None = None):
+        from tui_gateway.session_client_host import HOST_KEY, HOST_KEYS
+        self.service_key = HOST_KEY if service_key is None else service_key
+        if self.service_key not in HOST_KEYS:
+            raise ValueError('Unsupported execution-host generation')
         self.home = Path(home).resolve()
         directory = self.home / 'session-clients'
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -184,6 +192,8 @@ class SessionClientHub:
                     request TEXT NOT NULL, deadline REAL NOT NULL, state TEXT NOT NULL,
                     response TEXT);
                 CREATE TABLE IF NOT EXISTS cursors (client TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS create_routes (
+                    identity TEXT PRIMARY KEY, service_key TEXT NOT NULL, owner TEXT);
                 CREATE TABLE IF NOT EXISTS viewers (
                     session_key TEXT NOT NULL, client TEXT NOT NULL, pid INTEGER NOT NULL,
                     born REAL NOT NULL, expires REAL NOT NULL, PRIMARY KEY(session_key,client));
@@ -191,8 +201,7 @@ class SessionClientHub:
         self.path.chmod(0o600)
         self._thread = None
         if execution_host:
-            from tui_gateway.session_client_host import HOST_KEY
-            self.claim(HOST_KEY, '')
+            self.claim(self.service_key, '')
         if start:
             self.start()
 
@@ -498,7 +507,7 @@ class SessionClientHub:
                        (client, seq))
 
     def call(self, key: str, method: str, params: dict, *, timeout: float = 30,
-             origin: str | None = None, expected_owner: str | None = None) -> dict:
+             origin: str | None = None, expected_owner: str | None = None, automatic_forum: dict | None = None) -> dict:
         if not _broker_getter_allowed(method, params):
             raise ValueError('Only an allowlisted session-specific getter may cross the broker')
         if method not in _REMOTE_METHODS:
@@ -513,14 +522,15 @@ class SessionClientHub:
         if row['sid'].startswith('gateway:') or key == GATEWAY_KEY:
             from gateway.session_client_bridge import validate_request
             validate_request(method, params)
-        from tui_gateway.session_client_host import HOST_KEY
+        from tui_gateway.session_client_host import HOST_KEYS
         from tui_gateway.transport import current_transport
         identity = getattr(current_transport(), 'auth_identity', None)
         identity = {k: identity.get(k) for k in ('provider', 'user_id')} if isinstance(identity, dict) else None
         request = {'jsonrpc': '2.0', 'id': secrets.token_hex(16), 'method': method,
-                   'params': {**params, **({'session_id': row['sid']} if key not in {HOST_KEY, GATEWAY_KEY} else {})},
+                   'params': {**params, **({'session_id': row['sid']} if key not in {*HOST_KEYS, GATEWAY_KEY} else {})},
                    '_client_origin': origin,
-                   '_client_auth_identity': identity}
+                   '_client_auth_identity': identity,
+                   **({'_automatic_forum': automatic_forum} if automatic_forum else {})}
         if current_transport() is not None:
             request['_client_viewer'] = {'client': self.owner, 'pid': self.pid, 'born': self.born}
         request['params'].pop('profile', None)
@@ -528,6 +538,9 @@ class SessionClientHub:
             return self._execute(key, request)
         deadline = time.time() + timeout
         with self._db() as db:
+            if automatic_forum:
+                from gateway.session_forum_sync import require_automatic_scope
+                require_automatic_scope(self.home, automatic_forum['scope'], key=key, chat_id=automatic_forum['chat_id'])
             db.execute('INSERT INTO commands VALUES (?,?,?,?,?,?,NULL)',
                        (request['id'], row['owner'], key, json.dumps(request), deadline, 'pending'))
         while time.time() < deadline and not self._stop.wait(0.03):
@@ -543,6 +556,12 @@ class SessionClientHub:
         raise RuntimeError('Owner did not acknowledge this operation; do not resend automatically')
 
     def _execute(self, key: str, request: dict) -> dict:
+        if guard := request.get('_automatic_forum'):
+            from gateway.session_forum_sync import require_automatic_scope
+            try:
+                require_automatic_scope(self.home, guard['scope'], key=key, chat_id=guard['chat_id'])
+            except RuntimeError as exc:
+                return {'id': request['id'], 'error': {'code': 4093, 'message': str(exc)}}
         if not _broker_getter_allowed(request['method'], request['params']):
             return {'id': request['id'], 'error': {'code': 4092,
                     'message': 'Only an allowlisted session-specific getter may cross the broker'}}
@@ -568,8 +587,7 @@ class SessionClientHub:
             if key != GATEWAY_KEY and request['params'].get('session_id') != row['sid']:
                 return server._err(request['id'], 4092, 'This request belongs to a retired runtime')
             return consumer(request)
-        from tui_gateway.session_client_host import HOST_KEY
-        if key == HOST_KEY and self.execution_host and row and row['owner'] == self.owner and row['online']:
+        if key == self.service_key and self.execution_host and row and row['owner'] == self.owner and row['online']:
             if request['method'] == 'session.active_list':
                 token = _bypass.set(True)
                 try:
@@ -761,20 +779,16 @@ def _profile_config_request(home: Path | str, params: dict, rid):
 
 def _gateway_active_list(hub, gateway, params, rid):
     from tui_gateway import server
-    from tui_gateway.session_client_host import HOST_KEY
     try:
         responses = [hub.call(gateway['session_key'], 'session.active_list', params,
                               expected_owner=gateway['owner'], timeout=5)]
-        host = hub.lookup(HOST_KEY)
-        if host and host['owner'] != hub.owner:
-            responses.append(hub.call(HOST_KEY, 'session.active_list', params,
-                                      expected_owner=host['owner'], timeout=5))
+        host_rows = _host_active_rows(hub, params)
         token = _bypass.set(True)
         try:
             responses.append(server.handle_request({'id': rid, 'method': 'session.active_list', 'params': params}))
         finally:
             _bypass.reset(token)
-        rows = {}
+        rows = dict(host_rows)
         for response in responses:
             if 'error' in response:
                 return {**response, 'id': rid}
@@ -785,10 +799,29 @@ def _gateway_active_list(hub, gateway, params, rid):
         return server._err(rid, 4092, str(exc))
 
 
+def _host_active_rows(hub, params):
+    from tui_gateway.session_client_host import HOST_KEYS
+    rows = {}
+    for key in HOST_KEYS:
+        host = hub.lookup(key)
+        if not host or host['owner'] == hub.owner or not _owner_alive(host):
+            continue
+        response = hub.call(key, 'session.active_list',
+                            {'current_session_id': params.get('current_session_id')},
+                            expected_owner=host['owner'], timeout=5)
+        if 'error' in response:
+            raise RuntimeError(response['error']['message'])
+        for item in response['result']['sessions']:
+            owner = hub.lookup(item['session_key'])
+            if owner and owner['owner'] == host['owner'] and owner['sid'] == item['id'] and _owner_alive(owner):
+                rows[item['id']] = item
+    return rows
+
+
 def _active_list(params: dict, rid):
-    """Read the existing host only; losing it never launches a replacement."""
+    """Read both existing generations; losing either never launches a replacement."""
     from tui_gateway import server
-    from tui_gateway.session_client_host import HOST_KEY
+    from tui_gateway.session_client_host import HOST_KEYS
     home = server._profile_home(params.get('profile')) or server._hermes_home
     if not (Path(home) / 'session-clients' / 'broker.sqlite').exists():
         return None
@@ -796,15 +829,11 @@ def _active_list(params: dict, rid):
     from gateway.session_client_bridge import GATEWAY_KEY
     if gateway := hub.lookup(GATEWAY_KEY):
         return _gateway_active_list(hub, gateway, params, rid)
-    host = hub.lookup(HOST_KEY)
-    if not host or host['owner'] == hub.owner or not _owner_alive(host):
+    hosts = [hub.lookup(key) for key in HOST_KEYS]
+    if not any(host and host['owner'] != hub.owner and _owner_alive(host) for host in hosts):
         return None
     try:
-        remote = hub.call(HOST_KEY, 'session.active_list',
-                          {'current_session_id': params.get('current_session_id')},
-                          expected_owner=host['owner'], timeout=5)
-        if 'error' in remote:
-            return {**remote, 'id': rid}
+        rows = _host_active_rows(hub, params)
         token = _bypass.set(True)
         try:
             local = server.handle_request({'id': rid, 'method': 'session.active_list', 'params': params})
@@ -812,15 +841,10 @@ def _active_list(params: dict, rid):
             _bypass.reset(token)
         if 'error' in local:
             return local
-        rows = {item['id']: item for item in local['result']['sessions']}
-        for item in remote['result']['sessions']:
-            owner = hub.lookup(item['session_key'])
-            if owner and owner['owner'] == host['owner'] and owner['sid'] == item['id'] and _owner_alive(owner):
-                rows[item['id']] = item
+        rows.update({item['id']: item for item in local['result']['sessions']})
         return server._ok(rid, {'sessions': list(rows.values())})
     except (RuntimeError, ValueError) as exc:
-        # A live-but-unresponsive host is UNKNOWN to the watchdog, not an empty
-        # successful list that would end a still-executing turn.
+        # An unresponsive host is UNKNOWN, not an empty list that ends a live turn.
         return server._err(rid, 4092, str(exc))
 
 
