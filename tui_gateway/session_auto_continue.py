@@ -55,13 +55,24 @@ def _auto_continue_note(prompt: str) -> str:
             f"finish the task. The interrupted request was:]\n\n{prompt}")
 
 
+def _interrupted_auto_continue_allowed(session: dict) -> bool:
+    """Hosted admissions restore state, never retry already-admitted work.
+
+    The admission transport exists before native eager/cold resume scheduling
+    and is retained by deferred hydration. Isolated children carry the same
+    policy on their record rather than borrowing the pipe's capabilities.
+    """
+    return not (session.get("_hosted_no_auto_continue") is True
+                or getattr(session.get("transport"), "suppress_interrupted_auto_continue", False) is True)
+
+
 def _maybe_schedule_auto_continue(sid: str, session: dict, session_key: str) -> dict | None:
     """Kick off a continuation turn for a crash-interrupted session (session.resume cold paths). Returns a descriptor
     for the resume payload when scheduled, else None. The turn runs on a background thread after the deferred agent
     build via _run_prompt_submit, so the client that just resumed streams it."""
     # Hosted room turns are recovered by their durable task/lease state machine; generic auto-continue would bypass
     # its execution generation and duplicate work.
-    if session.get("source") == "bot_room":
+    if session.get("source") == "bot_room" or not _interrupted_auto_continue_allowed(session):
         return None
     home = _session_home(session)
     if (marker := read_turn_marker(home, session_key)) is None:

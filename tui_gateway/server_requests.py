@@ -129,7 +129,7 @@ def bind_sinks(write_json: Callable[[dict], Any], emit: Callable[[str, str, dict
 def advertise(transport: Any, server_requests: bool) -> None:
     """Record whether *transport*'s client answers server→client requests (``client.capabilities``)."""
     with _lock:
-        if server_requests:
+        if server_requests and getattr(transport, 'supports_server_requests', True) is not False:
             _answering_clients.add(transport)
         else:
             _answering_clients.discard(transport)
@@ -149,8 +149,8 @@ def answers_requests(transport: Any) -> bool:
 def _unanswerable(method: str, sid: str) -> bool:
     if _answerable(sid):
         return False
-    logger.info("server request %s for %s not sent: the attached client predates server→client requests "
-                "(update the Hermes app)", method, sid)
+    logger.info("server request %s for %s not sent: this session's attached transports cannot answer "
+                "interactive requests", method, sid)
     return True
 
 
@@ -169,6 +169,11 @@ def _register(req: ServerRequest) -> None:
         raise ValueError(problem)  # a key the renderer's typed handler would never read: our bug
     with _lock:
         _open[req.id] = req
+    # Adoption may have disabled hosted dialogs between send's capability check
+    # and registration. Register first so cancellation cannot miss this waiter.
+    if _unanswerable(req.method, req.sid):
+        cancel(req.sid, reason='unsupported client')
+        return
     _write(req.frame())
 
 

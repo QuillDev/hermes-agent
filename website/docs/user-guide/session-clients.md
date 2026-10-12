@@ -6,7 +6,7 @@ description: "Continue a live session between Hermes Desktop and Discord on the 
 
 # Shared session clients
 
-Session clients let Desktop and a Discord thread work with the same live Hermes session. Prompts, steering messages, and stop requests from either client go to the process that owns the session. Sharing does not start a second agent or transfer the running agent to another process.
+Session clients let Desktop and a Discord thread work with the same live Hermes session. With sharing enabled, new Desktop sessions and Discord `/share` sessions execute in a detached, profile-local host. Desktop and Discord are viewing/control clients, not execution owners. Sharing does not start a second agent or transfer a running agent between clients.
 
 ## Enable sharing
 
@@ -20,7 +20,7 @@ Both Desktop and the Discord gateway must use the **same host and Hermes profile
 
 ## Share Desktop to Discord
 
-1. Open a live conversation in Desktop.
+1. Enable sharing, then open a new conversation in Desktop (or reopen stored history after finishing and closing its previous run).
 2. Select **Share to Discord** beside the conversation title.
 3. Copy the `/attach TOKEN` command shown in the dialog.
 4. Paste it in an authorized Discord channel served by the gateway for the same profile. Mention the bot if that channel requires mentions (for example, `@Hermes /attach TOKEN`).
@@ -39,14 +39,18 @@ Desktop receives live assistant output, tool progress, shared prompts, and attac
 
 In the linked Discord thread, send ordinary prompts or use `/steer TEXT` to guide the active agent and `/stop` to interrupt it. Desktop's existing prompt, steering, and stop controls target that same agent. File and image uploads pass through the owner's existing attachment handlers.
 
-Disconnecting a viewer does not stop the owner's active run. Reconnecting Desktop resumes the owner's runtime and history; Discord delivery uses a durable cursor so normal gateway reconnects do not replay completed replies. Turning sharing off stops new mirrored events. The current clients are native Desktop and Discord; the legacy browser-chat backend is not connected to this transport.
+Disconnecting or closing a viewing client, switching conversations, and stopping its viewing backend do not stop the active run. Desktop `session.close` detaches that view; use the stop control to interrupt execution. Reconnecting Desktop resumes the same host runtime and history; Discord delivery uses a durable cursor so normal gateway reconnects do not replay completed replies. Turning sharing off disables new client controls and mirrored events without starting a replacement run. The current clients are native Desktop and Discord; the legacy browser-chat backend is not connected to this transport.
 
 ## Privacy and lifetime
 
 Private chats are **never automatically mirrored** into Discord. Linking requires an explicit share and attach action. Choose the destination channel with its members and permissions in mind.
 
-The process that owns the session must remain alive. If Desktop owns it, keep Desktop and its backend running. If the Discord gateway owns it, keep that gateway running. Closing the owner app or stopping its backend does **not** migrate the live session to the other client. Stored history remains available, but the live agent cannot continue through an owner that has exited.
+The execution host must remain alive, but **neither Desktop nor the Discord gateway needs to remain open for execution to continue**. Discord delivery pauses while its gateway is offline and catches up from its durable cursor when it returns. The host uses the profile's credentials and private mailbox; it has no public network listener. Its logs live in `<profile home>/session-clients/host.log`.
+
+If the execution host itself exits, controls fail closed: an admitted prompt is never automatically retried in a replacement process. Explicitly reopening stored history can start a fresh host and resume that conversation, but cannot recover the lost live Python agent or automatically restart its interrupted task.
+
+A session already running before sharing was enabled cannot be moved safely into the host. Finish that run, close its old view, and reopen its stored history, or start a new conversation. The share operation reports this condition rather than pretending that client-owned execution can survive client shutdown. Private hosted drafts remain out of saved history until a prompt or explicit sharing action.
 
 This is same-host, same-profile access to a live session, not remote-host synchronization or process failover.
 
-Cross-process interactive approval/clarification dialogs are not bridged by this initial transport. Use ordinary, unshared sessions for workflows requiring those dialogs. Delivery is replay-safe across normal reconnects, but a crash between an acknowledged Discord send and its cursor write can duplicate that delivery.
+Cross-process interactive approval/clarification dialogs are not bridged by this initial transport. Disable session sharing **before creating** a session for workflows requiring those dialogs. Delivery is replay-safe across normal reconnects, but a crash between an acknowledged Discord send and its cursor write can duplicate that delivery. The detached lifecycle is verified on Linux; native Windows process-tree/update termination behavior still requires platform testing.

@@ -45,7 +45,9 @@ def _owner_process(home, ready, stop, surface):
                                             'params': {'session_id': sid}})
             assert 'result' in shared, shared
             record = hub.lookup(created['result']['stored_session_id'])
-        invitation = hub.share(record['sid'])
+        shared = hub.call(record['session_key'], 'session.clients.share', {})
+        assert 'result' in shared, shared
+        invitation = shared['result']
         ready.put((record, invitation))
         stop.wait(60)
         server._shutdown_sessions()
@@ -77,6 +79,7 @@ async def _until(predicate, timeout=20):
 
 
 @pytest.mark.asyncio
+@pytest.mark.live_system_guard_bypass  # Detached test host deliberately outlives its creating subprocess.
 @pytest.mark.parametrize('surface', ['desktop', 'discord'])
 async def test_desktop_discord_share_live_execution_across_processes(tmp_path, monkeypatch, surface):
     from tests.fakes.fake_llm_provider import FakeLLMServer, Text, ToolCall, Hang, write_hermes_home
@@ -123,7 +126,7 @@ async def test_desktop_discord_share_live_execution_across_processes(tmp_path, m
             assert not isinstance(started, dict), started
             record, invitation = started
             key, sid = record['session_key'], record['sid']
-            assert record['pid'] == child.pid and record['pid'] != os.getpid()
+            assert record['pid'] not in {child.pid, os.getpid()}
             hub = get_hub(home)
             adapter = DiscordTransport()
             async def create_thread(parent, title):
@@ -182,8 +185,11 @@ async def test_desktop_discord_share_live_execution_across_processes(tmp_path, m
                     'id': 'steer', 'method': 'session.steer',
                     'params': {'session_id': sid, 'text': 'include shared steering'}})
                 assert steered['result']['status'] == 'queued', steered
-            # Disconnect EVERY Desktop viewer while the SAME run is live. The
-            # owner's persistent mailbox keeps execution alive until completion.
+            # Stop the entire creating surface/backend during an active model
+            # call, not merely its socket. Neither viewing process owns the run.
+            stop.set()
+            await asyncio.to_thread(child.join, 15)
+            assert not child.is_alive() and child.exitcode == 0
             desktop.close()
             server._close_sessions_for_transport(desktop)
             release.set()
@@ -232,7 +238,7 @@ async def test_desktop_discord_share_live_execution_across_processes(tmp_path, m
             await poll_session_clients(runner, home, 'default', {})
             await poll_session_clients(runner, home, 'default', {})
             assert [text for chat, text, _ in adapter.messages if chat == 'linked-thread'].count('same execution completed') == 1
-            assert hub.lookup(key)['pid'] == child.pid
+            assert hub.lookup(key)['pid'] == record['pid']
         finally:
             release.set()
             stop.set()
@@ -241,5 +247,17 @@ async def test_desktop_discord_share_live_execution_across_processes(tmp_path, m
                 child.terminate()
                 child.join(5)
             if hub:
+                import psutil
+                from tui_gateway.session_client_host import HOST_KEY
+                host = hub.lookup(HOST_KEY)
+                if host:
+                    process = psutil.Process(host['pid'])
+                    if process.create_time() == host['born']:
+                        process.terminate()
+                        try:
+                            await asyncio.to_thread(process.wait, 15)
+                        except psutil.TimeoutExpired:
+                            process.kill()
+                            await asyncio.to_thread(process.wait, 5)
                 hub.close()
             assert child.exitcode == 0

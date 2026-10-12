@@ -323,6 +323,8 @@ class ComputeHost:
                     session[key] = str(frame[key])
         else:
             session = self._build_server_session(server, frame, sid)
+        session["_broker_server_requests_unsupported"] = frame.get("server_requests_supported") is False
+        session["_hosted_no_auto_continue"] = frame.get("hosted_no_auto_continue") is True
         if isinstance(frame.get("attached_images"), list):
             session["attached_images"] = list(frame.get("attached_images") or [])
         # A model switch queued on the host side while this session was busy rides

@@ -534,6 +534,9 @@ def _teardown_session(session: dict | None, *, end_reason: str = "tui_close") ->
     with contextlib.suppress(Exception), _session_profile_runtime_scope(session):
         if hasattr(agent := session.get("agent"), "close"):
             agent.close()
+    if key := session.get('shared_session_key'):
+        from tui_gateway.session_clients import get_hub
+        get_hub(session.get('profile_home') or _hermes_home).retire(key, session['_sid'])
 
 
 def _attach_worker(sid: str, session: dict, worker) -> None:

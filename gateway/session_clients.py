@@ -27,9 +27,9 @@ def _cursor(home, session_key, chat_id, seq=None):
 
 
 def _rpc(hub, link, method, **params):
-    origin = params.pop("origin", None)
+    origin = params.pop("origin", None) or (f"discord:{link['chat_id']}" if link.get('chat_id') else None)
     response = hub.call(link["session_key"], method, {"session_id": link["sid"], **params},
-                        **({"origin": origin} if origin else {}))
+                        origin=origin, expected_owner=link.get('owner'))
     if response.get("error"):
         raise RuntimeError(response["error"].get("message", "Shared session request failed"))
     return response.get("result", {})
@@ -61,8 +61,13 @@ async def _bind(runner, event, hub, home, command):
     if command == "attach":
         link = await asyncio.to_thread(hub.attach, event.get_command_args().strip(), "discord", chat_id, user_id)
     else:
-        link = await asyncio.to_thread(hub.create)
-        await asyncio.to_thread(hub.bind_client, link["session_key"], "discord", chat_id, user_id)
+        from tui_gateway.session_client_host import create_on_host
+        created = await asyncio.to_thread(create_on_host, home)
+        if created.get('error'):
+            raise RuntimeError(created['error']['message'])
+        link = await asyncio.to_thread(hub.lookup, created['result']['stored_session_id'])
+        invitation = await asyncio.to_thread(_rpc, hub, link, 'session.clients.share')
+        link = await asyncio.to_thread(hub.attach, invitation['token'], 'discord', chat_id, user_id)
     head = await asyncio.to_thread(hub.event_head, link["session_key"])
     await asyncio.to_thread(_cursor, home, link["session_key"], chat_id, head)
     await adapter.send(chat_id, "Shared session connected. Messages here use the same session as Desktop.")

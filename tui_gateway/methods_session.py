@@ -1149,16 +1149,16 @@ def _(rid, params: dict) -> dict:
 
 
 @method("session.active_list")
+@_profile_scoped
 def _(rid, params: dict) -> dict:
-    """Live TUI sessions in this process (not a DB browser)."""
+    """Live sessions in the requested profile, including its existing execution host."""
     snapshot, err = _snapshot_sessions(rid)
     if err:
         return err
     current = str(params.get("current_session_id") or "")
-    # ``_finalized`` sessions linger until the reaper pops them (they inflated the footer). Do NOT filter on
-    # the WS-detached sentinel: detached is attachable until grace-reap, and ``hermes --tui`` rides stdio.
-    # Keep insertion order (focused must not jump).
-    rows = [_session_live_item(sid, session, current) for sid, session in snapshot if not session.get("_finalized")]
+    home = _profile_home(params.get("profile"))
+    rows = [_session_live_item(sid, session, current) for sid, session in snapshot
+            if not session.get("_finalized") and _live_profile_matches(session, home)]
     return _ok(rid, {"sessions": rows})
 
 

@@ -224,6 +224,11 @@ def _session_is_lru_evictable(sid: str, session: dict) -> bool:
     ready = session.get("agent_ready")
     if ready is not None and not ready.is_set() and not session.get("lazy"):
         return False
+    if session.get('shared_session_key'):
+        from tui_gateway.session_clients import get_hub
+        hub = get_hub(session.get('profile_home') or _hermes_home)
+        if hub.execution_host:
+            return not hub.has_viewers(session['shared_session_key'])
     return _transport_is_dead(session.get("transport"))
 
 

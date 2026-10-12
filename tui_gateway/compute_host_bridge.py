@@ -76,6 +76,8 @@ def _compute_host_turn_frame(
         "service_tier_override": session.get("create_service_tier_override"),
         "source": _session_source(session), "attached_images": attached_images,
         "auth_user_id": _session_auth_user_id(session),
+        "server_requests_supported": not session.get("_broker_server_requests_unsupported", False),
+        "hosted_no_auto_continue": not _interrupted_auto_continue_allowed(session),
         "queued_prompt_generation": queued_prompt_generation,
         # #101416: vouch that this process already holds the registry lease for this session, so
         # the child adopts it as an inert token instead of re-claiming and being fenced out by
