@@ -1617,6 +1617,11 @@ class GatewayStartupMixin:
             # diagnostic snapshot once, instead of flushing at each return.
             await self._start_flush_runtime_status()
 
+    async def _internal_notification_admission(self, event, adapter):
+        """Reserve native wakes on the incumbent before adapter scheduling/FIFO admission."""
+        from gateway.session_client_admission import acquire_internal_admission
+        return await acquire_internal_admission(self, event, adapter)
+
     async def _start_impl(self) -> bool:
         logger.info("Starting Hermes Gateway...")
         self._start_install_faulthandler()
@@ -1626,6 +1631,8 @@ class GatewayStartupMixin:
         if self._start_check_access_policy():
             return True
         await self._start_recover_previous_run()
+        from gateway.session_client_bridge import start_gateway_bridge
+        await start_gateway_bridge(self)
         # The gateway is a boot owner of the Nous free tier, beside `cmd_chat` and `hermes serve`: every
         # demand-time site (provider resolution, /login, the connector token) is a read that needs the
         # identity to already exist. Blocking here, before any adapter connects, is what keeps a fast

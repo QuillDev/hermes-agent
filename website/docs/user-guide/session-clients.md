@@ -45,11 +45,19 @@ Disconnecting or closing a viewing client, switching conversations, and stopping
 
 Private chats are **never automatically mirrored** into Discord. Linking requires an explicit share and attach action. Choose the destination channel with its members and permissions in mind.
 
-The execution host must remain alive, but **neither Desktop nor the Discord gateway needs to remain open for execution to continue**. Discord delivery pauses while its gateway is offline and catches up from its durable cursor when it returns. The host uses the profile's credentials and private mailbox; it has no public network listener. Its logs live in `<profile home>/session-clients/host.log`.
+For new detached-host sessions, **neither Desktop nor the Discord gateway needs to remain open for execution to continue**; the execution host must remain alive. Discord delivery pauses while its gateway is offline and catches up from its durable cursor when it returns. For bridged legacy sessions, the original gateway remains the execution owner and must stay running. The detached host uses the profile's credentials and private mailbox; it has no public network listener. Its logs live in `<profile home>/session-clients/host.log`.
 
 If the execution host itself exits, controls fail closed: an admitted prompt is never automatically retried in a replacement process. Explicitly reopening stored history can start a fresh host and resume that conversation, but cannot recover the lost live Python agent or automatically restart its interrupted task.
 
-A session already running before sharing was enabled cannot be moved safely into the host. Finish that run, close its old view, and reopen its stored history, or start a new conversation. The share operation reports this condition rather than pretending that client-owned execution can survive client shutdown. Private hosted drafts remain out of saved history until a prompt or explicit sharing action.
+A session already running before sharing was enabled remains owned by its original runtime. Sharing cannot move that live Python agent into the detached host. Private hosted drafts remain out of saved history until a prompt or explicit sharing action.
+
+## Existing conversations and rollback
+
+**An in-place legacy GatewayRunner bridge is implemented; full migration is not.** With sharing enabled on the same host/profile, Desktop resumes a registered existing Discord conversation on its original gateway owner before native cold-resume can repair history or retire queued rows. The gateway's actual agent, pinned prompt, queues, source identity, authorization and existing Discord destination stay in that process. Desktop can observe streamed output/progress and use plain-text prompts, steering and stop without `/share`, `/attach`, reopening the conversation or creating another Discord thread. Attached views protect the incumbent cache from passive TTL/LRU/pressure eviction; explicit native conversation boundaries still control teardown.
+
+Known incumbent owners and verified compression aliases are generation-fenced. Branch/reset/delegate children do not inherit an old view's authority. Native completion notifications remain on the original gateway path; unavailable ownership is refused before notification admission. Private Desktop sessions are not auto-mirrored. An undiscovered, retired, dead or unresponsive legacy owner fails closed rather than constructing another writer or replaying admitted work. The bridge does not move an agent between processes. Its initial control surface excludes voice, attachments, rewind/hidden prompts and client queue replay; interactive dialogs keep their original gateway answer transport.
+
+Turning sharing off is not a reverse migration. It does not rewrite the original routing index, import JSONL transcripts, or restore a database snapshot. A route with an existing shared owner remains fenced rather than starting another writer. There is currently no supported procedure that hands legacy ownership back while reconciling the latest canonical history and compression aliases; do not use this setting as a legacy migration/rollback mechanism.
 
 This is same-host, same-profile access to a live session, not remote-host synchronization or process failover.
 

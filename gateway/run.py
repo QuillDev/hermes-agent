@@ -4046,10 +4046,10 @@ class GatewayRunner(
             return
         cached_sources = getattr(self, "_session_sources", None)
         if cached_sources is None:
-            cached_sources = OrderedDict()
-            self._session_sources = cached_sources
+            cached_sources = self._session_sources = OrderedDict()
         try:
-            cached_sources[session_key] = dataclasses.replace(source)
+            from gateway.session_identity import replace_source
+            cached_sources[session_key] = replace_source(source)
         except Exception:
             logger.debug("Failed to cache live session source for %s", session_key, exc_info=True)
             return

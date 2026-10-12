@@ -1174,6 +1174,8 @@ class GatewayNotificationsMixin(GatewayNotificationOwnershipMixin):
             raw_sid = str(evt.get("origin_session_id") or "").strip() or str(source.chat_id or "")
             return await self._self_post_api_server(adapter, synth_text, raw_sid, evt)
         try:
+            from gateway.session_clients import require_internal_owner
+            await asyncio.to_thread(require_internal_owner, self, source)
             metadata: dict[str, Any] = {"notification_origin": "process_registry_synthetic"}
             synth_text = _mark_internal_notification(synth_text)
             session_key = str(evt.get("session_key") or "").strip()

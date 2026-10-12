@@ -420,7 +420,6 @@ class GatewayTurnMixin:
             source = dataclasses.replace(source, thread_id=recovered)
             with suppress(Exception):
                 event.source = source
-
         if expected_session_key:
             derived_session_key = self._session_key_for_source(source)
             if derived_session_key != expected_session_key:
@@ -429,7 +428,6 @@ class GatewayTurnMixin:
                     expected_session_key, derived_session_key,
                 )
                 return
-
         strict_session = bool(event_metadata.get("gateway_session_strict"))
         pinned_session_id = str(event_metadata.get("gateway_session_id") or "").strip()
         if strict_session:
@@ -441,11 +439,9 @@ class GatewayTurnMixin:
                 )
                 return
         else:
-            # Internal wakes observe reset policy without counting as user activity, or periodic
-            # notifications keep the routing key alive across every daily/idle boundary.
+            # Internal wakes must not renew user activity across daily/idle boundaries.
             session_entry = await self.async_session_store.get_or_create_session(
-                source, touch_activity=not bool(getattr(event, "internal", False)),
-            )
+                source, touch_activity=not bool(getattr(event, "internal", False)))
         session_key = session_entry.session_key
         if not strict_session and pinned_session_id:
             resolved_entry = await self._resolve_async_delegation_session(session_entry, pinned_session_id, event_metadata.get("gateway_proven_session_id") or "", event_metadata.get("gateway_completion_ids") or ())
@@ -453,6 +449,8 @@ class GatewayTurnMixin:
                 return
             session_entry = resolved_entry
         self._cache_session_source(session_key, source)
+        from gateway.session_client_bridge import register_entry
+        register_entry(self, session_entry, source)
         if await asyncio.to_thread(self._is_telegram_topic_lane, source):
             session_entry = await self._hmwa_heal_telegram_topic_binding(source, session_entry, session_key)
         from gateway.run_heartbeat_acceptance import resolve_heartbeat_owner
@@ -2260,6 +2258,8 @@ class GatewayTurnMixin:
                 hidden_reasoning_incomplete=hidden_reasoning_incomplete,
                 is_context_overflow_failure=is_context_overflow_failure,
             )
+            from gateway.session_client_bridge import completed
+            completed(self, session_entry, session_key, '' if _intentional_silence else response, agent_result)
             return await self._hmwa_deliver_turn_response(
                 event, source, session_entry, session_key, run_generation,
                 agent_result, agent_messages, response, _footer_line, _intentional_silence,

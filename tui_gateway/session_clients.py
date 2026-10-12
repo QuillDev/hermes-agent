@@ -18,6 +18,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from typing import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import psutil
@@ -155,6 +156,7 @@ class SessionClientHub:
         self._viewer_refresh_at: dict[str, float] = {}
         self._subscriptions_lock = threading.RLock()
         self._mailboxes: dict[str, MailboxTransport] = {}
+        self._external_consumers: dict[str, Callable[[dict], dict]] = {}
         # Native create/resume can build before registration. Serialize admissions
         # for this profile through adoption, not just the final ownership claim.
         self._admission_lock = threading.RLock()
@@ -174,6 +176,9 @@ class SessionClientHub:
                 CREATE TABLE IF NOT EXISTS events (
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, session_key TEXT NOT NULL, frame TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS event_session ON events(session_key,seq);
+                CREATE TABLE IF NOT EXISTS event_keys (
+                    session_key TEXT NOT NULL, identity TEXT NOT NULL, seq INTEGER NOT NULL,
+                    PRIMARY KEY(session_key, identity));
                 CREATE TABLE IF NOT EXISTS commands (
                     id TEXT PRIMARY KEY, owner TEXT NOT NULL, session_key TEXT NOT NULL,
                     request TEXT NOT NULL, deadline REAL NOT NULL, state TEXT NOT NULL,
@@ -213,6 +218,10 @@ class SessionClientHub:
                              '(SELECT session_key FROM aliases WHERE alias=?),?)', (key, key)).fetchone()
             return dict(row) if row else None
 
+    def _broker_key(self, key: str) -> str:
+        """Transcript compression tips are aliases, never event/lease identities."""
+        return (self.lookup(key) or {}).get('session_key', key)
+
     def claim(self, key: str, sid: str) -> dict:
         with self._db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -224,6 +233,62 @@ class SessionClientHub:
             db.execute('INSERT OR REPLACE INTO owners VALUES (?,?,?,?,?,1)',
                        (key, self.owner, sid, self.pid, self.born))
         return self.lookup(key)
+
+    def register_external(self, key: str, sid: str, consumer, *, aliases=()):
+        """Fence an in-place execution owner before exposing its native controls.
+
+        Unlike an explicit native resume, registration never takes a dead owner's
+        tasks. A prior generation remains evidence of uncertain admission.
+        """
+        with self._admission_lock, self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM owners WHERE session_key=?', (key,)).fetchone()
+            if row and (row['owner'] != self.owner or row['sid'] != sid or not row['online']):
+                raise RuntimeError('Legacy route has a different execution owner; no replacement run was started')
+            for alias in (key, *aliases):
+                occupied = db.execute('SELECT session_key FROM owners WHERE session_key=?', (alias,)).fetchone()
+                if occupied and occupied['session_key'] != key:
+                    raise RuntimeError('Legacy lineage already has an execution owner')
+                found = db.execute('SELECT session_key FROM aliases WHERE alias=?', (alias,)).fetchone()
+                if found and found['session_key'] != key:
+                    raise RuntimeError('Legacy lineage already belongs to another execution owner')
+            existing = self._external_consumers.get(key)
+            if existing is not None and existing is not consumer:
+                raise RuntimeError('An in-place execution consumer is already registered')
+            self._external_consumers[key] = consumer
+            db.execute('INSERT OR REPLACE INTO owners VALUES (?,?,?,?,?,1)',
+                       (key, self.owner, sid, self.pid, self.born))
+            for alias in aliases:
+                if alias != key:
+                    db.execute('INSERT OR REPLACE INTO aliases VALUES (?,?)', (alias, key))
+
+    def register_service(self, key: str, sid: str, consumer):
+        """Register executionless discovery; never recover a conversation actor.
+
+        The reserved service has no task or runtime ID. A dead/cleanly retired
+        service generation may be replaced, but unknown liveness stays fenced.
+        """
+        from gateway.session_client_bridge import GATEWAY_KEY
+        if key != GATEWAY_KEY or sid != '':
+            raise ValueError('Only executionless gateway discovery is a replaceable service')
+        with self._admission_lock, self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            alias = db.execute('SELECT session_key FROM aliases WHERE alias=?', (key,)).fetchone()
+            if alias and alias['session_key'] != key:
+                raise RuntimeError('Discovery key belongs to an execution owner')
+            row = db.execute('SELECT * FROM owners WHERE session_key=?', (key,)).fetchone()
+            if row and (row['sid'] != '' or (row['owner'] != self.owner and _owner_alive(dict(row)))):
+                raise RuntimeError('Discovery already has a live or unknown owner')
+            existing = self._external_consumers.get(key)
+            if existing is not None and existing is not consumer:
+                raise RuntimeError('An executionless service consumer is already registered')
+            db.execute('INSERT OR REPLACE INTO owners VALUES (?,?,?,?,?,1)',
+                       (key, self.owner, sid, self.pid, self.born))
+            self._external_consumers[key] = consumer
+
+    def external_owner(self, key: str) -> bool:
+        row = self.lookup(key)
+        return bool(row and row['owner'] == self.owner and row['session_key'] in self._external_consumers)
 
     def _pin(self, key: str, sid: str):
         from tui_gateway import server
@@ -293,7 +358,7 @@ class SessionClientHub:
         if row is None or row['owner'] != self.owner:
             raise ValueError('Only the creator may bind a newly shared client')
         with self._db() as db:
-            db.execute('INSERT INTO clients VALUES (?,?,?,?)', (platform, str(chat_id), str(user_id), key))
+            db.execute('INSERT INTO clients VALUES (?,?,?,?)', (platform, str(chat_id), str(user_id), row['session_key']))
 
     def link(self, platform: str, chat_id: str) -> dict | None:
         with self._db() as db:
@@ -312,6 +377,14 @@ class SessionClientHub:
         return self.lookup(result['result']['stored_session_id'])
 
     def _create_reply(self, method: str, params: dict, auth_identity=None, viewer=None) -> dict:
+        if method == 'session.resume':
+            from tui_gateway.session_client_host import probe_gateway_owner
+            key = str(params.get('session_id') or '')
+            probe_gateway_owner(self.home, key)
+            row = self.lookup(key)
+            if row and (row['sid'].startswith('gateway:') or self.external_owner(key) or (row['owner'] != self.owner and
+                        (_owner_alive(row) or not row['owner'].startswith('host:')))):
+                return self.call(key, method, params, expected_owner=row['owner'])
         with self._admission_lock:
             return self._admit_reply(method, params, auth_identity, viewer)
 
@@ -371,14 +444,20 @@ class SessionClientHub:
             reset_transport(transport_token)
             _bypass.reset(token)
 
-    def publish(self, key: str, frame: dict) -> int | None:
+    def publish(self, key: str, frame: dict, *, identity: str | None = None) -> int | None:
         if not enabled(self.home):
             return
         from tui_gateway import server
         with self._db() as db:
+            db.execute('BEGIN IMMEDIATE')
             owner = db.execute('SELECT owner,online,sid FROM owners WHERE session_key=?', (key,)).fetchone()
             if owner is None or owner['owner'] != self.owner or not owner['online']:
                 raise RuntimeError('Only the current execution owner may publish')
+            if identity:
+                prior = db.execute('SELECT seq FROM event_keys WHERE session_key=? AND identity=?',
+                                   (key, identity)).fetchone()
+                if prior:
+                    return prior['seq']
             session = server._sessions.get(owner['sid']) or {}
             tip = str(session.get('session_key') or '')
             if tip and tip != key:
@@ -386,18 +465,25 @@ class SessionClientHub:
             row = db.execute('INSERT INTO events(session_key,frame) VALUES (?,?)',
                              (key, json.dumps(frame, ensure_ascii=False)))
             seq = row.lastrowid
+            if key in self._external_consumers:
+                frame = {**frame, 'params': {**frame.get('params', {}), 'seq': seq, 'epoch': owner['sid']}}
+                db.execute('UPDATE events SET frame=? WHERE seq=?', (json.dumps(frame, ensure_ascii=False), seq))
+            if identity:
+                db.execute('INSERT INTO event_keys VALUES (?,?,?)', (key, identity, seq))
             if seq % 256 == 0:
                 db.execute('DELETE FROM events WHERE session_key=? AND seq NOT IN '
                            '(SELECT seq FROM events WHERE session_key=? ORDER BY seq DESC LIMIT 10000)', (key, key))
             return seq
 
     def events(self, key: str, after: int) -> list[dict]:
+        key = self._broker_key(key)
         with self._db() as db:
             rows = db.execute('SELECT seq,frame FROM events WHERE session_key=? AND seq>? ORDER BY seq LIMIT 256',
                               (key, after))
             return [{'seq': r['seq'], 'frame': json.loads(r['frame'])} for r in rows]
 
     def event_head(self, key: str) -> int:
+        key = self._broker_key(key)
         with self._db() as db:
             return db.execute('SELECT COALESCE(MAX(seq),0) FROM events WHERE session_key=?', (key,)).fetchone()[0]
 
@@ -423,12 +509,16 @@ class SessionClientHub:
         if expected_owner is not None and row['owner'] != expected_owner:
             raise RuntimeError('Execution owner changed; explicitly resume before retrying this operation')
         key = row['session_key']
+        from gateway.session_client_bridge import GATEWAY_KEY
+        if row['sid'].startswith('gateway:') or key == GATEWAY_KEY:
+            from gateway.session_client_bridge import validate_request
+            validate_request(method, params)
         from tui_gateway.session_client_host import HOST_KEY
         from tui_gateway.transport import current_transport
         identity = getattr(current_transport(), 'auth_identity', None)
         identity = {k: identity.get(k) for k in ('provider', 'user_id')} if isinstance(identity, dict) else None
         request = {'jsonrpc': '2.0', 'id': secrets.token_hex(16), 'method': method,
-                   'params': {**params, **({'session_id': row['sid']} if key != HOST_KEY else {})},
+                   'params': {**params, **({'session_id': row['sid']} if key not in {HOST_KEY, GATEWAY_KEY} else {})},
                    '_client_origin': origin,
                    '_client_auth_identity': identity}
         if current_transport() is not None:
@@ -462,6 +552,22 @@ class SessionClientHub:
         from tui_gateway import server
         from tui_gateway.transport import bind_transport, reset_transport
         row = self.lookup(key)
+        consumer = self._external_consumers.get(key)
+        if consumer is not None:
+            if not row or row['owner'] != self.owner or not row['online']:
+                return server._err(request['id'], 4092, 'Legacy execution owner is retired')
+            if not enabled(self.home):
+                return server._err(request['id'], 4093, 'Shared clients are disabled; no replacement run was started')
+            from gateway.session_client_bridge import GATEWAY_KEY, validate_request
+            try:
+                validate_request(request['method'], request['params'])
+            except (ValueError, TypeError, KeyError):
+                # Mailbox rows may bypass ingress. Reject before invoking any
+                # consumer, without reflecting sensitive untrusted arguments.
+                return server._err(request['id'], 4092, 'Unsupported incumbent gateway control')
+            if key != GATEWAY_KEY and request['params'].get('session_id') != row['sid']:
+                return server._err(request['id'], 4092, 'This request belongs to a retired runtime')
+            return consumer(request)
         from tui_gateway.session_client_host import HOST_KEY
         if key == HOST_KEY and self.execution_host and row and row['owner'] == self.owner and row['online']:
             if request['method'] == 'session.active_list':
@@ -522,12 +628,14 @@ class SessionClientHub:
             _origin.reset(origin_token)
 
     def subscribe(self, key: str, transport, *, after: int | None = None):
+        key = self._broker_key(key)
         with self._subscriptions_lock:
             peers = self._subscribers.setdefault(key, {})
             peers[transport] = self.event_head(key) if after is None else after
             self._viewer_lease(key, True)
 
     def unsubscribe(self, key: str, transport):
+        key = self._broker_key(key)
         with self._subscriptions_lock:
             peers = self._subscribers.get(key, {})
             peers.pop(transport, None)
@@ -536,6 +644,7 @@ class SessionClientHub:
                 self._viewer_lease(key, False)
 
     def _viewer_lease(self, key: str, attached: bool):
+        key = self._broker_key(key)
         with self._db() as db:
             if attached:
                 db.execute('INSERT OR REPLACE INTO viewers VALUES (?,?,?,?,?)',
@@ -549,6 +658,7 @@ class SessionClientHub:
         viewer = request.get('_client_viewer')
         key = response.get('result', {}).get('stored_session_id')
         if viewer and key:
+            key = self._broker_key(key)
             # Reserve attachment before returning a new runtime. LRU may run
             # before the viewing backend receives the reply and subscribes.
             with self._db() as db:
@@ -556,6 +666,7 @@ class SessionClientHub:
                            (key, viewer['client'], viewer['pid'], viewer['born'], time.time() + 30))
 
     def has_viewers(self, key: str) -> bool:
+        key = self._broker_key(key)
         with self._db() as db:
             if db.execute('SELECT 1 FROM clients WHERE session_key=? LIMIT 1', (key,)).fetchone():
                 return True
@@ -569,6 +680,8 @@ class SessionClientHub:
             with self._db() as db:
                 retired = db.execute('UPDATE owners SET online=0 WHERE session_key=? AND owner=? AND sid=?',
                                      (key, self.owner, sid)).rowcount
+            if retired:
+                self._external_consumers.pop(key, None)
             if retired and (mailbox := self._mailboxes.pop(key, None)):
                 mailbox.close()
 
@@ -646,6 +759,32 @@ def _profile_config_request(home: Path | str, params: dict, rid):
     return None
 
 
+def _gateway_active_list(hub, gateway, params, rid):
+    from tui_gateway import server
+    from tui_gateway.session_client_host import HOST_KEY
+    try:
+        responses = [hub.call(gateway['session_key'], 'session.active_list', params,
+                              expected_owner=gateway['owner'], timeout=5)]
+        host = hub.lookup(HOST_KEY)
+        if host and host['owner'] != hub.owner:
+            responses.append(hub.call(HOST_KEY, 'session.active_list', params,
+                                      expected_owner=host['owner'], timeout=5))
+        token = _bypass.set(True)
+        try:
+            responses.append(server.handle_request({'id': rid, 'method': 'session.active_list', 'params': params}))
+        finally:
+            _bypass.reset(token)
+        rows = {}
+        for response in responses:
+            if 'error' in response:
+                return {**response, 'id': rid}
+            for item in response['result']['sessions']:
+                rows[item['id']] = item
+        return server._ok(rid, {'sessions': list(rows.values())})
+    except (RuntimeError, ValueError) as exc:
+        return server._err(rid, 4092, str(exc))
+
+
 def _active_list(params: dict, rid):
     """Read the existing host only; losing it never launches a replacement."""
     from tui_gateway import server
@@ -654,6 +793,9 @@ def _active_list(params: dict, rid):
     if not (Path(home) / 'session-clients' / 'broker.sqlite').exists():
         return None
     hub = get_hub(home)
+    from gateway.session_client_bridge import GATEWAY_KEY
+    if gateway := hub.lookup(GATEWAY_KEY):
+        return _gateway_active_list(hub, gateway, params, rid)
     host = hub.lookup(HOST_KEY)
     if not host or host['owner'] == hub.owner or not _owner_alive(host):
         return None
@@ -695,6 +837,18 @@ def route_request(method: str, params: dict, rid):
         return server._err(rid, 4064, str(exc))
 
 
+def _probe_activation(method, target, home, key, rid):
+    if method != 'session.activate' or target or not enabled(home):
+        return None
+    from tui_gateway import server
+    from tui_gateway.session_client_host import probe_gateway_owner
+    try:
+        probe_gateway_owner(home, key)
+    except RuntimeError as exc:
+        return server._err(rid, 4092, str(exc))
+    return None
+
+
 def _route_session_request(method: str, params: dict, rid):
     from tui_gateway import server
     from tui_gateway.transport import current_transport
@@ -726,7 +880,7 @@ def _route_session_request(method: str, params: dict, rid):
         return server._ok(rid, {'closed': True})
     if target and method in _REMOTE_METHODS:
         home, key, _generation = target
-    elif method == 'session.resume':
+    elif method in {'session.resume', 'session.activate'}:
         home = server._profile_home(params.get('profile')) or server._hermes_home
         if not enabled(home) and not (Path(home) / 'session-clients' / 'broker.sqlite').exists():
             return None
@@ -734,8 +888,11 @@ def _route_session_request(method: str, params: dict, rid):
     else:
         return None
     hub = get_hub(home)
+    if (error := _probe_activation(method, target, home, key, rid)) is not None:
+        return error
     owner = hub.lookup(key)
-    if owner is None or owner['owner'] == hub.owner:
+    if owner is None or (owner['owner'] == hub.owner and not hub.external_owner(key)
+                         and not owner['sid'].startswith('gateway:')):
         return None
     key = owner['session_key']
     if target and (owner['owner'] != target[2] or owner['sid'] != sid):
@@ -754,8 +911,8 @@ def _route_session_request(method: str, params: dict, rid):
         if 'result' in response and method in {'session.resume', 'session.activate', 'session.branch', 'session.branch_whole'}:
             runtime = response['result']['session_id']
             if response['result'].get('stored_session_id'):
-                key = response['result']['stored_session_id']
-                owner = hub.lookup(key)
+                owner = hub.lookup(response['result']['stored_session_id'])
+                key = owner['session_key']
             with _remote_lock:
                 _remote[runtime] = (str(hub.home), key, owner['owner'])
             if current_transport() is not None:

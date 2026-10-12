@@ -2094,9 +2094,10 @@ class GatewayShutdownMixin(GatewaySessionEndMixin):
                 _cron_live, _api_live, _api_worker_live, _deferred_live,
             )
             return
+        from gateway.session_client_admission import retire_before_database_close
+        if not retire_before_database_close(self, ctx):
+            return
         _step = GatewayShutdownMixin._quiet_step
-        # Close SQLite session DBs so --replace's new gateway does not hit 'database is locked'.
-        # ``_session_db`` is an AsyncSessionDB facade — unwrap; ``session_store`` holds ``_db``.
         _self_db = getattr(self, "_session_db", None)
         _self_db = getattr(_self_db, "_db", _self_db)
         store = getattr(self, "session_store", None)
@@ -2109,7 +2110,6 @@ class GatewayShutdownMixin(GatewaySessionEndMixin):
             _step("SessionDB handle sweep error", _sweep)
         # Same sweep for the runner's own per-profile session_search handles.
         _step("Runner SessionDB handle sweep error", lambda: GatewayRunner.close_all_session_db_handles(self))
-
         def _close_shared() -> None:
             # Shared SessionDB instances still held by the process-wide registry (tools, cron, mirror).
             # This is the safety net that guarantees no WAL write lock survives past gateway shutdown

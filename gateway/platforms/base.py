@@ -3958,6 +3958,8 @@ class BasePlatformAdapter(ABC):
             self._session_tasks.pop(session_key, None)
             self._release_session_guard(session_key, guard=guard)
             return False
+        from gateway.session_client_admission import track_native_admission
+        track_native_admission(self, event, session_key, task)
         return True
 
     def _track_session_task(self, session_key: str, task: Any) -> bool:
@@ -4068,14 +4070,8 @@ class BasePlatformAdapter(ABC):
             logger.warning("Dropping internally routed event: expected session=%s derived=%s",
                            expected_session_key, session_key)
             return
-        # On-entry self-heal: clear a guard whose owner task already exited.
-        if session_key in self._active_sessions:
-            self._heal_stale_session_lock(session_key)
-        if session_key in self._active_sessions:
-            await self._handle_message_while_active(event, session_key)
-            return
-        # Guard installed synchronously BEFORE the task spawns so a second message can't race in.
-        event._gateway_accepted = self._start_session_processing(event, session_key)
+        from gateway.session_client_admission import dispatch_native_admission
+        await dispatch_native_admission(self, event, session_key)
 
     async def _handle_message_while_active(self, event: MessageEvent, session_key: str) -> None:
         """Route a message that arrived while ``session_key`` is busy: bypass
@@ -4683,6 +4679,8 @@ class BasePlatformAdapter(ABC):
             # Flush any timer that missed the in-band drain, then reconcile ownership.
             await self._flush_text_debounce_now(session_key)
             self._finish_session_task(session_key, interrupt_event)
+            from gateway.session_client_admission import settle_native_admission
+            settle_native_admission(self, event, session_key)
 
     _REQUEUE_BACKOFF_INITIAL_SECONDS = 0.25
     # Kept at 1s: nothing wakes the back-off sleep, so a genuine message merged into the slot

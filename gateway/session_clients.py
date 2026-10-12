@@ -102,10 +102,56 @@ async def _submit(event, hub, link):
     return None
 
 
+def _unlinked_legacy_owner(runner, source, hub):
+    """Read native routing without touching, resetting, or publishing the chat.
+
+    A Desktop resume may already own the canonical ID even though no invitation
+    linked this Discord destination. Native gateway leases cannot fence that
+    process; falling through would construct another writer. Retired owners also
+    remain fenced: an uncertain operation is not permission to retry a task.
+    """
+    store = getattr(runner, 'session_store', None)
+    if store is None:
+        return None
+    key = runner._session_key_for_source(source)
+    stored = store.peek_session_id(key)
+    if not stored:
+        return None
+    owner = hub.lookup(stored)
+    if owner:
+        return owner
+    tip = store._compression_tip_for_session_id(stored)
+    return hub.lookup(tip) if tip and tip != stored else None
+
+
+def internal_owner_available(runner, source):
+    """Keep native notification receipts on the original route, or refuse BEFORE admission."""
+    if source.platform != Platform.DISCORD:
+        return True
+    home = runner._resolve_profile_home_for_source(source)
+    if not (Path(home) / 'session-clients' / 'broker.sqlite').exists():
+        return True
+    from tui_gateway.session_clients import get_hub
+    hub = get_hub(home)
+    owner = _unlinked_legacy_owner(runner, source, hub)
+    return owner is None or hub.external_owner(owner['session_key'])
+
+
+def require_internal_owner(runner, source):
+    if not internal_owner_available(runner, source):
+        from gateway.wake import WakeNotAccepted
+        raise WakeNotAccepted('Legacy notification owner is unavailable; no replacement run was started')
+
+
 async def handle_session_client_message(runner, event) -> tuple[bool, str | None]:
     """Called only after the gateway's admission and emergency-stop gates."""
-    if event.source.platform != Platform.DISCORD or event.internal:
+    if event.source.platform != Platform.DISCORD:
         return False, None
+    if event.internal:
+        available = await asyncio.to_thread(internal_owner_available, runner, event.source)
+        if not available:
+            event._gateway_accepted = False
+        return not available, None
     from tui_gateway.session_clients import enabled, get_hub
     home = runner._resolve_profile_home_for_source(event.source)
     sharing_enabled = await asyncio.to_thread(enabled, home)
@@ -115,11 +161,17 @@ async def handle_session_client_message(runner, event) -> tuple[bool, str | None
     with _profile_runtime_scope(home):
         hub = await asyncio.to_thread(get_hub, home)
         link = await asyncio.to_thread(hub.link, "discord", str(event.source.chat_id))
-        if not sharing_enabled:
-            return (True, "Shared clients are disabled; no replacement run was started.") if link else (False, None)
         command = event.get_command()
         if not link and command not in {"attach", "share"}:
+            owner = await asyncio.to_thread(_unlinked_legacy_owner, runner, event.source, hub)
+            if owner and hub.external_owner(owner['session_key']):
+                return False, None  # The original adapter/runner still owns admission and delivery.
+            if owner:
+                return True, ("This legacy Discord route points to a shared execution owner, but its "
+                              "client link has not been migrated; no replacement run was started.")
             return False, None
+        if not sharing_enabled:
+            return (True, "Shared clients are disabled; no replacement run was started.") if link else (False, None)
         if _is_bot(event):
             return True, None
         if link and str(event.source.user_id) != str(link["user_id"]):
@@ -240,6 +292,8 @@ async def session_client_watcher(runner):
                  else [(launch_profile, launch_home)])
         for profile, home in homes:
             try:
+                from gateway.session_client_bridge import refresh_gateway_bridge
+                await refresh_gateway_bridge(runner, home)
                 await poll_session_clients(runner, home, profile, progress)
             except Exception:
                 logger.exception("Shared session event delivery failed for profile %s", profile)

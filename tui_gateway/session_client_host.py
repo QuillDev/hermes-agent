@@ -60,6 +60,52 @@ def create_on_host(home: Path | str, params: dict | None = None, *, method='sess
     return get_hub(home).call(HOST_KEY, method, {'source': 'desktop', **(params or {})}, expected_owner=host['owner'])
 
 
+def _stored_gateway_history(home, key):
+    from hermes_state import SessionDB
+    path = Path(home) / 'state.db'
+    if not path.exists():
+        return False
+    with SessionDB(path) as db:
+        row = db.get_session(key)
+        if row and row.get('source') == 'discord':
+            return True
+        import json
+        lineage = db._resume_lineage_ids(key)
+        for route in db.list_gateway_routing_rows():
+            entry = json.loads(route['entry_json'])
+            platform = entry.get('platform') or (entry.get('origin') or {}).get('platform')
+            if platform == 'discord' and entry.get('session_id') in lineage:
+                return True
+    return False
+
+
+def probe_gateway_owner(home, key: str):
+    """Positive incumbent discovery, before native cold-resume can touch rows."""
+    from gateway.session_client_bridge import GATEWAY_KEY
+    from tui_gateway.session_clients import get_hub
+    hub = get_hub(home)
+    if hub.lookup(key):
+        return
+    legacy = _stored_gateway_history(home, key)
+    discovery = hub.lookup(GATEWAY_KEY)
+    # Enabling the flag on a live gateway wakes its existing watcher. Wait only
+    # for discovery registration, never re-admit or retry a model task.
+    deadline = time.monotonic() + 2
+    while legacy and discovery is None and time.monotonic() < deadline:
+        time.sleep(0.03)
+        discovery = hub.lookup(GATEWAY_KEY)
+    if discovery is None:
+        if legacy:
+            raise RuntimeError('Legacy gateway incumbent discovery is unavailable; no replacement run was started')
+        return
+    response = hub.call(GATEWAY_KEY, 'session.resume', {'session_id': key},
+                        expected_owner=discovery['owner'])
+    if 'error' in response:
+        raise RuntimeError(response['error']['message'])
+    if legacy and not response.get('result', {}).get('legacy_owner'):
+        raise RuntimeError('Legacy gateway route has no verified incumbent; no replacement run was started')
+
+
 def route_hosted_session(method: str, params: dict, rid):
     """Admit new Desktop sessions before an agent exists in the viewing backend."""
     from tui_gateway import server
@@ -76,8 +122,13 @@ def route_hosted_session(method: str, params: dict, rid):
     request = dict(params)
     if method == 'session.resume':
         key = str(params.get('session_id') or '')
+        try:
+            probe_gateway_owner(home, key)
+        except RuntimeError as exc:
+            return server._err(rid, 4092, str(exc))
         owner = hub.lookup(key)
-        if owner and (_owner_alive(owner) or not owner['owner'].startswith('host:')):
+        if owner and (_owner_alive(owner) or owner['sid'].startswith('gateway:')
+                      or not owner['owner'].startswith('host:')):
             return None
         # A pre-opt-in agent already live in this backend cannot be moved across
         # processes. Keep its existing ownership rather than constructing a twin.

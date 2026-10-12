@@ -994,6 +994,8 @@ class GatewayAgentCacheMixin:
             return _is_live(agent) and transcript_persistence_caught_up(agent)
 
         with _lock:
+            from gateway.session_client_bridge import retained_agent_ids
+            running_ids |= retained_agent_ids(self)
             ordered = [(key, _first_agent(entry)) for key, entry in _cache.items()]
             plan = plan_pressure_evictions(
                 ordered, is_evictable=_is_evictable, max_evictions=bounds.max_evictions_per_pass,
@@ -1061,6 +1063,8 @@ class GatewayAgentCacheMixin:
         # Snapshot of agent instances mid-turn, keyed by id() so lookup is O(1) and independent of
         # AIAgent.__eq__ (which MagicMock overrides in tests).
         running_ids = self._running_agent_ids()
+        from gateway.session_client_bridge import retained_agent_ids
+        running_ids |= retained_agent_ids(self)
         # Walk LRU → MRU; only the first (size - cap) LRU positions are candidates. An active slot is
         # SKIPPED rather than evicting a newer entry — that would penalise a fresh session (no cache
         # history) to protect a long-running one. Cache may stay over cap until the next insert.
@@ -1073,7 +1077,7 @@ class GatewayAgentCacheMixin:
         if remaining_over_cap > 0:
             logger.warning(
                 "Agent cache over cap (%d > %d); %d excess slot(s) held by "
-                "mid-turn agents — will re-check on next insert.",
+                "active or attached agents — will re-check on next insert.",
                 len(_cache), cap, remaining_over_cap,
             )
         for key, agent in evict_plan:
@@ -1096,6 +1100,8 @@ class GatewayAgentCacheMixin:
         to_evict: list[tuple] = []
         running_ids = self._running_agent_ids()
         with _lock:
+            from gateway.session_client_bridge import retained_agent_ids
+            running_ids |= retained_agent_ids(self)
             for key, entry in list(_cache.items()):
                 agent = _tuple_agent(entry)
                 if agent is None or id(agent) in running_ids:

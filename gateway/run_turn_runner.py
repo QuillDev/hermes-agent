@@ -1310,11 +1310,11 @@ class TurnRunner:
         ctx.agent_holder[0] = agent  # interrupt support
         # The titler fires from the turn prologue, so attach the rename lane before the run.
         self._attach_session_title_callback(agent, ctx)
-        # Publish turn ownership for /stop, /new, disconnect and shutdown interrupts; older session
-        # processes are outside this baseline and remain alive.
+        # Publish this turn's process ownership; older session processes remain alive.
         agent._gateway_turn_process_task_id, agent._gateway_turn_process_baseline = ctx.process_task_id, ctx.process_baseline
         ctx.tools_holder[0] = getattr(agent, "tools", None)  # transcript logging
-
+        from gateway.session_client_bridge import wire_callbacks
+        wire_callbacks(runner, ctx, agent)
     # ── blocking prompts from the agent thread (approval / clarify) ─────────────────────────
 
     def _close_native_stream_boundary(self, reason: str, placeholder: str | None = None, reopen: bool = False) -> bool:
